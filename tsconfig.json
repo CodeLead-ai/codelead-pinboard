@@ -1,0 +1,17 @@
+{
+  // The typecheck of the package's Node side: the sources and their tests (`npm run typecheck`,
+  // whose second step checks the page with src/page/tsconfig.json). The build is
+  // tsconfig.build.json, which emits the sources alone into dist/.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.ts", "vitest.config.ts"]
+}

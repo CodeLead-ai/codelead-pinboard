@@ -1,0 +1,25 @@
+{
+  // The board's page: a browser app, checked by the second step of `npm run typecheck` and built by
+  // Vite (`npm run build:page`). Kept apart from the package's tsconfig, which compiles the CLI
+  // for Node: every file of the page is .tsx (or .mts) so that the package's include
+  // ("src/**/*.ts") never picks it up. The page imports the process's contract as types only.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["vite/client"]
+  },
+  "include": ["src", "vite.config.mts"]
+}

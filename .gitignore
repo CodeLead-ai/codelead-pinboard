@@ -1,0 +1,5 @@
+node_modules/
+# The build: made by `npm run build` (the code and the page), shipped in the package, not in git.
+dist/
+*.tsbuildinfo
+.DS_Store
