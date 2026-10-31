@@ -1,0 +1,20 @@
+{
+  "schema": "codelead.board/1",
+  "name": "codelead-workspace",
+  "columns": [
+    { "id": "inbox", "name": "Inbox" },
+    { "id": "backlog", "name": "Backlog" },
+    { "id": "ideas", "name": "Ideas" },
+    { "id": "pinned", "name": "Pinned", "owner": "person" },
+    { "id": "in-progress", "name": "In progress" },
+    { "id": "for-review", "name": "For review" },
+    { "id": "done", "name": "Done", "owner": "person" }
+  ],
+  "types": ["question", "decision", "task", "idea", "review", "note"],
+  "tagNamespaces": ["repo", "area", "by"],
+  "participants": [
+    { "id": "robin", "kind": "person", "name": "Robin" },
+    { "id": "claude", "kind": "agent", "name": "Claude Code" }
+  ],
+  "agents": { "mayMoveTo": ["inbox", "backlog", "ideas", "in-progress", "for-review"], "mayCreate": true }
+}
