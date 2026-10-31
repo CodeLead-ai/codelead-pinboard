@@ -170,6 +170,11 @@ Exit codes: **0** done; **1** a rule refused the write (or `validate` found prob
 
 `pinboard --help` and `pinboard <command> --help` give every option.
 
+The words of a refusal, of `AGENTS.md` and of the page still name the command as CodeLead
+gives it (`codelead board init`, `codelead board validate`): the package was extracted from
+CodeLead without changing a word, so a host's board reads as before. Under the bin, read them
+as `pinboard init`, `pinboard validate`.
+
 ## How a host embeds it
 
 The package's entries:
