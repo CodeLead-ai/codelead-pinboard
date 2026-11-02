@@ -4,7 +4,7 @@
  */
 export * from "./contract.js";
 export { editorInfo, mentionsIn, resolveCardPath, vscodeHref } from "./editor.js";
-export { buildPage, contentSecurityPolicy, ensurePageBuilt, PACKAGE_NAME, pageBuildReason, pageLocation, PageFiles, type PageLocation } from "./page.js";
+export { buildPage, canBuildPage, contentSecurityPolicy, ensurePageBuilt, PACKAGE_NAME, pageBuildReason, pageLocation, PageFiles, type PageLocation } from "./page.js";
 export { createBoardServer, statusOfRefusal, type BoardServer, type BoardServerOptions } from "./server.js";
 export { BoardStream, type StreamOptions } from "./stream.js";
 export { boardPayload, cardDetail, notificationsPayload, personOf, summarize, WORKING_COLUMN } from "./views.js";

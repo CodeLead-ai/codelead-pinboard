@@ -439,20 +439,22 @@ describe("the page's process: its writes say who they address, its notifications
 describe("the page's build follows the rule it shares with the core", () => {
   it("is built again when the core's mentions module is newer than the build", async () => {
     const base = await temporary("pinboard-mentions-page-");
-    const source = path.join(base, "page");
-    const dist = path.join(source, "dist");
+    // The package's own layout: src/page, src/core beside it, the build tools in node_modules.
+    const source = path.join(base, "src", "page");
+    const dist = path.join(base, "dist", "page");
     fs.mkdirSync(path.join(source, "src"), { recursive: true });
     fs.mkdirSync(dist, { recursive: true });
-    fs.mkdirSync(path.join(base, "core"), { recursive: true });
+    fs.mkdirSync(path.join(base, "src", "core"), { recursive: true });
+    fs.mkdirSync(path.join(base, "node_modules", "vite"), { recursive: true });
     fs.writeFileSync(path.join(source, "src", "main.tsx"), "export {};\n");
     fs.writeFileSync(path.join(dist, "index.html"), "<!doctype html>\n");
-    fs.writeFileSync(path.join(base, "core", "mentions.ts"), "export {};\n");
+    fs.writeFileSync(path.join(base, "src", "core", "mentions.ts"), "export {};\n");
     const at = (file: string, seconds: number): void => fs.utimesSync(file, new Date(seconds * 1000), new Date(seconds * 1000));
     at(path.join(source, "src", "main.tsx"), 1_000);
-    at(path.join(base, "core", "mentions.ts"), 1_000);
+    at(path.join(base, "src", "core", "mentions.ts"), 1_000);
     at(path.join(dist, "index.html"), 2_000);
     expect(pageBuildReason({ source, dist })).toBeUndefined();
-    at(path.join(base, "core", "mentions.ts"), 3_000);
+    at(path.join(base, "src", "core", "mentions.ts"), 3_000);
     expect(pageBuildReason({ source, dist })).toBe("the page's sources changed since it was built");
   });
 });

@@ -82,11 +82,21 @@ function sharedSourceTime(location: PageLocation): number {
   return newest;
 }
 
-/** Why the page must be built before it is served, or undefined when its build is current. */
+/**
+ * Whether the page can be built where it is: only a checkout of the package has the build tools
+ * (its own node_modules/vite). An installed copy (under a host's node_modules) has the sources
+ * and the build it ships, and a host's Vite, if any, lacks the page's plugins: it serves the
+ * build it ships and never rebuilds.
+ */
+export function canBuildPage(location: PageLocation): boolean {
+  return fs.existsSync(path.join(location.source, "..", "..", "node_modules", "vite"));
+}
+
+/** Why the page must be built before it is served, or undefined when its build is current (or cannot be rebuilt here). */
 export function pageBuildReason(location: PageLocation): string | undefined {
   const index = path.join(location.dist, "index.html");
   if (!fs.existsSync(index)) return "the page is not built yet";
-  if (!fs.existsSync(path.join(location.source, "src"))) return undefined;
+  if (!canBuildPage(location) || !fs.existsSync(path.join(location.source, "src"))) return undefined;
   return Math.max(newestSource(location.source), sharedSourceTime(location)) > fs.statSync(index).mtimeMs ? "the page's sources changed since it was built" : undefined;
 }
 
@@ -96,14 +106,16 @@ export function pageBuildReason(location: PageLocation): string | undefined {
  * runner sets "test"), so it is "production" for the length of the build.
  */
 export async function buildPage(location: PageLocation, outDir: string = location.dist): Promise<void> {
+  const cannot = new BoardRefusal(
+    "usage",
+    "The board's page is not built, and the tools to build it are not here (an installed copy serves the build it ships). In the Pinboard package's folder (@codelead/pinboard), run `npm install` and then `npm run build`."
+  );
+  if (!canBuildPage(location)) throw cannot;
   let vite: typeof import("vite");
   try {
     vite = await import("vite");
   } catch {
-    throw new BoardRefusal(
-      "usage",
-      "The board's page is not built, and Vite is not installed here to build it. In the Pinboard package's folder (@codelead/pinboard), run `npm install` and then `npm run build`."
-    );
+    throw cannot;
   }
   const nodeEnv = process.env.NODE_ENV;
   process.env.NODE_ENV = "production";
