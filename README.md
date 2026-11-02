@@ -27,8 +27,9 @@ Node 22 or later. It depends on `commander` alone at run time.
 The board is meant to take work off your hands, not to add a command line to your day. In
 practice three parties touch it, each in its own way:
 
-- **You** work on **the page**: write cards, read threads, answer, drag, decide. You type two
-  commands in the life of a board (create it, open the page) and never another one.
+- **You** work on **the page** in your browser: write cards, read threads, answer, drag,
+  decide. You type two commands in the life of a board (create it, start the page) and never
+  another one.
 - **The agent** runs **the commands** itself. `AGENTS.md` in the board folder teaches it; you see
   what it did on the page.
 - **The command line** stays for whoever prefers it, and for the few things the page does not
@@ -68,16 +69,17 @@ of the session and every 30 minutes.
 `docs/codelead/board/AGENTS.md` holds the rest: the columns, what an agent may do, how to
 check, reply, propose and record work. It was written for an agent that has never seen a board.
 
-**3. Open the page.** The last command you type:
+**3. Start the page.** The last command you type:
 
 ```sh
 pinboard serve --open
 ```
 
-It serves on 127.0.0.1 only (port 7414, or a free one) and opens the page. Leave it running in
-a terminal tab for as long as you like, days included: it picks up what the agent and the
-editor write to the files. If it stops, the same command brings it back. A host program gives
-it under its own name (CodeLead: `codelead board serve --open`).
+It prints the page's address (`http://127.0.0.1:7414/`, or another port when that one is
+taken) and, with `--open`, opens it in your browser. Leave it running in a terminal tab for as
+long as you like, days included: it picks up what the agent and the editor write to the files.
+If it stops, the same command brings it back. A host program gives it under its own name
+(CodeLead: `codelead board serve --open`).
 
 **4. Commit the board folder**, or let the agent do it: the cards, the log and `AGENTS.md`
 travel with the repository; the cursors and the lock do not (`docs/codelead/board/.gitignore`
@@ -88,10 +90,29 @@ git add docs/codelead/board
 git commit -m "board: init"
 ```
 
-### Your side: the page
+### How to use it
+
+Pinboard does not replace anything you use today. You still work in VS Code (or your editor)
+and with Claude Code, Codex or another coding agent as usual; the board is a tool beside them
+that makes a large or complex project, with one or several agents on it, easier to manage:
+what is asked, what is being done, what waits on whom, all in one place, in files the agents
+read and write too.
+
+**Open the page.** After `pinboard serve`, the terminal prints the address:
+
+```
+Pinboard: http://127.0.0.1:7414/
+The board in docs/codelead/board, as Robin. The page writes the board's files through the same rules as these commands; Ctrl+C stops it.
+```
+
+Open that address in your browser (`pinboard serve --open` opens it for you). The page is
+served to this machine only. Leave the terminal running; if it stops, run the command again.
+
+**On the page:**
 
 - **Write a card:** a title, a type (task, question, decision, idea, review, note), a
-  description in markdown. It lands in Inbox.
+  description in markdown. It lands in Inbox. That is how you ask an agent for something, or
+  note something for later.
 - **Read and answer:** open a card, read its thread, write a comment; type `@` to address
   someone (`@claude`): their next check lists that card first.
 - **Move cards** by dragging. **Pinned** and **Done** are yours alone: no agent moves a card
@@ -103,12 +124,16 @@ git commit -m "board: init"
 - **The editor works too.** A card is a markdown file in `items/`; a file changed by hand is
   noticed at the next check.
 
-### The agent's side: it runs the commands itself
+**With the agent, as usual:** ask for the work in its session ("do card 1"); the card and its
+thread are its context. The board does not start work by itself and never calls a model.
 
-What you will see it do, in its session, without being told each time:
+### What happens behind the scenes
 
-- **Check** at the start of each session and every 30 minutes (`check.intervalMinutes` in
-  `board.json`):
+Nothing below is typed by you. The agent does it by itself, because the paragraph you added in
+step 2 and `AGENTS.md` tell it to; you see the result on the page.
+
+- **It checks the board** at the start of each session and every 30 minutes
+  (`check.intervalMinutes` in `board.json`), and acts on what is new:
 
   ```
   $ pinboard check --as claude
@@ -120,18 +145,19 @@ What you will see it do, in its session, without being told each time:
   Run again with --ack once these are dealt with. Next check in 30 minutes.
   ```
 
-- **Answer** what is addressed to it, in the card's thread; ask you back with `@robin`.
-- **Propose:** a finding, an idea, a question for you becomes a card in Inbox, tagged
+- **It answers** what is addressed to it, in the card's thread, and asks you back with
+  `@robin` when it needs you.
+- **It proposes:** a finding, an idea, a question for you becomes a card in Inbox, tagged
   `by:claude`. A decision card carries its recommendation in its ask; only you set `decided`.
-- **Take work when you ask for it in the session** ("do card 1"), move the card to In progress,
-  and when it lands, record it and hand it over in one step:
+- **It records its work:** when you ask for a card in the session, it moves the card to In
+  progress; when the work lands, it writes what landed and hands the card over in one step:
 
   ```
   $ pinboard move 1 --to for-review --as claude --comment "Landed: 4f2a9c1 on main; src/pages/sign-in.ts, test/sign-in.test.ts (6 tests)."
   Moved #1 from In progress to For review, with the comment.
   ```
 
-- **Stay within the rules.** The same guard runs under the page, the commands and a host's
+- **It is held to the rules.** The same guard runs under the page, the commands and a host's
   code; a refusal writes nothing and says why:
 
   ```
