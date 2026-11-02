@@ -135,7 +135,8 @@ What the participant has seen. For an agent it is also its check cursor.
 
 A write is refused when its text holds:
 
-- **a secret**: a key, a connection-string password, a bearer token;
+- **a secret**: a key, a connection-string password (`Password=…`, or inside an address,
+  `scheme://user:password@host`), a bearer token;
 - **a path of this machine** outside the workspace (under the home folder);
 - **a private name**, listed in `private-names.txt`.
 

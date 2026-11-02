@@ -25,6 +25,9 @@ export type SanitizerFactory = (paths: SanitizerPaths) => TextSanitizer;
  * The secrets a text may hold: a connection-string password, a provider's key (OpenRouter's
  * `sk-or-…`, Anthropic's `sk-ant-…`) and a bearer token.
  */
+/** A password inside an address, `scheme://user:password@host`: the password alone becomes `<redacted>`. */
+const URL_PASSWORD = /\b([a-z][a-z0-9+.-]*:\/\/[^\s\/:@]*):([^\s@\/]+)@/gi;
+
 const SECRET_PATTERNS = [
   /(Password|Pwd|pwd|password)=([^;"'\s]+)/g,
   /sk-or-[A-Za-z0-9\-_]+/g,
@@ -59,6 +62,7 @@ export class BoardSanitizer implements TextSanitizer {
 
   public text(text: string): string {
     let result = text;
+    result = result.replace(URL_PASSWORD, "$1:<redacted>@");
     for (const pattern of SECRET_PATTERNS) {
       result = result.replace(pattern, (whole, first: string | undefined) => (first && /^(Password|Pwd|pwd|password|Bearer)$/.test(first) ? `${first}${whole.includes("=") ? "=" : " "}<redacted>` : "<redacted>"));
     }

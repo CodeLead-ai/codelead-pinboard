@@ -21,6 +21,7 @@ describe("the board's own sanitizer (the part of the audit pack's that the guard
     expect(sanitizer.text("key sk-ant-api03-abc_DEF-123 here")).toBe("key <redacted> here");
     expect(sanitizer.text('Server=db;User Id=sa;Password=s3cr3t!;"')).toBe('Server=db;User Id=sa;Password=<redacted>;"');
     expect(sanitizer.text("Bearer of good news")).toBe("Bearer of good news");
+    expect(sanitizer.text("REDIS_URL=redis://app:s3cretpassw0rd@cache:6379/0 and https://example.com:8080/x@y")).toBe("REDIS_URL=redis://app:<redacted>@cache:6379/0 and https://example.com:8080/x@y");
   });
 
   it("finds a Windows path in either slash, and with its backslashes doubled as JSON writes them", () => {
