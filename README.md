@@ -51,20 +51,40 @@ pinboard init --person robin:Robin
 ```
 Board created in docs/codelead/board: board.json, AGENTS.md, events.jsonl, .gitignore, items/, cursors/.
 Participants: robin (person), claude (agent). Agents read docs/codelead/board/AGENTS.md.
+
+Tell the agent, once, in the file it reads at the start of every session (CLAUDE.md, a root AGENTS.md or the like):
+  This repository has a Pinboard in docs/codelead/board. Read docs/codelead/board/AGENTS.md once per session, take part as `claude`, and run `pinboard check --as claude` at the start of the session and whenever asked; check again every 30 minutes while the session runs where you have a timer (Claude Code: `/loop 30m pinboard check --as claude`).
+Before that file says it, the first session starts with one sentence to the agent: "Read docs/codelead/board/AGENTS.md and check the board as claude."
 ```
 
 Without `--person`, the person is this machine's user; without `--agent`, the agent is
 `claude` ("Claude Code"). `--agent codex:Codex` adds a second agent, a second `--person` a
 second person. All of it can be changed later in `board.json`.
 
-**2. Tell the agent the board exists.** One paragraph in the file your agent reads at the start
-of a session (`CLAUDE.md`, a root `AGENTS.md`, or the like):
+**2. Tell the agent the board exists.** `init` printed the paragraph. Put it in the file your
+agent reads at the start of every session (`CLAUDE.md`, a root `AGENTS.md`, or the like):
 
 ```
 This repository has a Pinboard in docs/codelead/board. Read docs/codelead/board/AGENTS.md
 once per session, take part as `claude`, and run `pinboard check --as claude` at the start
-of the session and every 30 minutes.
+of the session and whenever asked; check again every 30 minutes while the session runs
+where you have a timer (Claude Code: `/loop 30m pinboard check --as claude`).
 ```
+
+From then on every session starts the cycle by itself. There is no prompt to type.
+
+**The first thing you say to the agent.** Before that file says it, the first session needs
+one sentence from you. `init` printed it too:
+
+```
+Read docs/codelead/board/AGENTS.md and check the board as claude.
+```
+
+**About "every 30 minutes".** An agent has no clock of its own: it checks when a session
+starts and when you ask. For a check while the session runs, start the timer the agent
+offers: in Claude Code, `/loop 30m pinboard check --as claude`, which ends with the session;
+Codex and others have their own, or none. The interval is `check.intervalMinutes` in
+`board.json`.
 
 `docs/codelead/board/AGENTS.md` holds the rest: the columns, what an agent may do, how to
 check, reply, propose and record work. It was written for an agent that has never seen a board.
@@ -132,8 +152,9 @@ thread are its context. The board does not start work by itself and never calls 
 Nothing below is typed by you. The agent does it by itself, because the paragraph you added in
 step 2 and `AGENTS.md` tell it to; you see the result on the page.
 
-- **It checks the board** at the start of each session and every 30 minutes
-  (`check.intervalMinutes` in `board.json`), and acts on what is new:
+- **It checks the board** at the start of each session, whenever you ask, and every 30 minutes
+  while a session runs when you started its timer (step 2; `check.intervalMinutes` in
+  `board.json`), and acts on what is new:
 
   ```
   $ pinboard check --as claude

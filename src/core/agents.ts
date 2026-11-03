@@ -42,6 +42,9 @@ checks below, when CodeLead is installed (\`codelead board --help\`).
 Every \`check.intervalMinutes\` minutes, and whenever the person asks, read the lines of
 \`events.jsonl\` after your cursor (\`codelead board check --as <you>\`). Act on what others
 wrote, then move your cursor (\`--ack\`). When nothing changed, that is one short read.
+The check every ${minutes} minutes needs a timer you do not have by yourself: in Claude Code the person
+starts one (\`/loop ${minutes}m codelead board check --as <you>\`); without one, check at the start of the
+session and whenever the person asks.
 An event whose \`data.addressed\` holds your id is addressed to you (its text mentions \`@<you>\`): the check lists those cards first, under "Addressed to you"; answer them first.
 An event with \`data.decided\` is the person's answer to a decision card, recorded in its fields: the check lists it under "Decided"; act on it as on a comment that says it.
 

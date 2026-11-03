@@ -8,6 +8,7 @@ export {
   runBoardCheck,
   runBoardImport,
   runBoardInit,
+  tellTheAgent,
   runBoardList,
   runBoardMove,
   runBoardNew,

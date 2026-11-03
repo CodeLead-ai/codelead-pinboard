@@ -7,6 +7,7 @@ import {
   createBoardCommand,
   runBoardCheck,
   runBoardInit,
+  tellTheAgent,
   runBoardList,
   runBoardMove,
   runBoardNew,
@@ -64,8 +65,20 @@ describe("codelead board, command by command, through each command's function", 
     const term = await terminal();
     expect(await runBoardInit({ name: "test-workspace", person: ["robin:Robin"], agent: ["claude:Claude Code"] }, term.deps)).toBe(0);
     expect(term.said()).toBe(
-      "Board created in ../../docs/codelead/board: board.json, AGENTS.md, events.jsonl, .gitignore, items/, cursors/.\nParticipants: robin (person), claude (agent). Agents read ../../docs/codelead/board/AGENTS.md."
+      [
+        "Board created in ../../docs/codelead/board: board.json, AGENTS.md, events.jsonl, .gitignore, items/, cursors/.",
+        "Participants: robin (person), claude (agent). Agents read ../../docs/codelead/board/AGENTS.md.",
+        "",
+        "Tell the agent, once, in the file it reads at the start of every session (CLAUDE.md, a root AGENTS.md or the like):",
+        "  This repository has a Pinboard in docs/codelead/board. Read docs/codelead/board/AGENTS.md once per session, take part as `claude`, and run `codelead board check --as claude` at the start of the session and whenever asked; check again every 30 minutes while the session runs where you have a timer (Claude Code: `/loop 30m codelead board check --as claude`).",
+        'Before that file says it, the first session starts with one sentence to the agent: "Read docs/codelead/board/AGENTS.md and check the board as claude."'
+      ].join("\n")
     );
+    // The words name the command the person typed (the host's), and with two agents each is named.
+    expect(tellTheAgent("docs/codelead/board", [{ id: "claude", name: "Claude Code" }, { id: "codex", name: "Codex" }], 20, "pinboard")).toEqual({
+      paragraph: "This repository has a Pinboard in docs/codelead/board. Read docs/codelead/board/AGENTS.md once per session, take part under your own id (`claude` for Claude Code, `codex` for Codex), and run `pinboard check --as <you>` at the start of the session and whenever asked; check again every 20 minutes while the session runs where you have a timer (Claude Code: `/loop 20m pinboard check --as <you>`).",
+      firstSentence: "Read docs/codelead/board/AGENTS.md and check the board under your own id."
+    });
     expect(fs.readdirSync(term.dir).sort()).toEqual([".gitignore", "AGENTS.md", "board.json", "cursors", "events.jsonl", "items"]);
     expect(JSON.parse(fs.readFileSync(path.join(term.dir, "board.json"), "utf8"))).toMatchObject({ name: "test-workspace", check: { intervalMinutes: 30 }, nextId: 1 });
     const guide = fs.readFileSync(path.join(term.dir, "AGENTS.md"), "utf8");
@@ -73,7 +86,9 @@ describe("codelead board, command by command, through each command's function", 
     expect(guide).toContain("- Move a card into Pinned or Done: those columns are the person's.");
     // About forty lines (the design); the mention rule (card #48) added its two sentences, the decision in the fields its two,
     // the conversation into cards (card #66) its four.
-    expect(guide.split("\n").length).toBeLessThanOrEqual(62);
+    // ... and the timer sentence of the check (the kick-off, 2026-11-03) its three.
+    expect(guide).toContain("The check every 30 minutes needs a timer you do not have by yourself");
+    expect(guide.split("\n").length).toBeLessThanOrEqual(65);
     expect(fs.readFileSync(path.join(term.dir, ".gitignore"), "utf8")).toBe("cursors/\n.board.lock\nprivate-names.txt\n.*.tmp\n");
     expect(await runBoardInit({}, term.deps)).toBe(1);
     expect(term.said()).toBe(`A board is already at ${term.dir} (board.json is there); nothing was written.`);

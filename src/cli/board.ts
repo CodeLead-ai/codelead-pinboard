@@ -5,6 +5,7 @@ import { Command } from "commander";
 import {
   addComment,
   boardContext,
+  DEFAULT_CHECK_MINUTES,
   boardLocation,
   checkBoard,
   colorName,
@@ -58,6 +59,8 @@ import { consoleLog, type BoardLog } from "./log.js";
  */
 export interface BoardCliDependencies {
   cwd?: () => string;
+  /** The words a person types for this command, as `init` quotes them in what to tell the agent: `pinboard`, `codelead board`; CodeLead's when not given. */
+  command?: string;
   /** Where the command's words go, line by line; the log's `say` when not given. */
   output?: (line: string) => void;
   now?: () => Date;
@@ -356,9 +359,42 @@ export async function runBoardInit(options: BoardInitOptions, dependencies: Boar
     const participants = [...(persons.length > 0 ? persons : defaults.filter((entry) => entry.kind === "person")), ...(agents.length > 0 ? agents : defaults.filter((entry) => entry.kind === "agent"))];
     const written = initBoard(ctx, { ...(options.name ? { name: options.name } : {}), participants });
     const where = path.relative(dependencies.cwd?.() ?? process.cwd(), ctx.dir) || ".";
-    output(options.json ? JSON.stringify({ dir: ctx.dir, written }, null, 2) : `Board created in ${where}: ${written.join(", ")}.\nParticipants: ${participants.map((entry) => `${entry.id} (${entry.kind})`).join(", ")}. Agents read ${path.join(where, "AGENTS.md")}.`);
+    const tell = tellTheAgent(path.relative(ctx.root, ctx.dir).split(path.sep).join("/"), participants.filter((entry) => entry.kind === "agent"), DEFAULT_CHECK_MINUTES, dependencies.command ?? "codelead board");
+    output(
+      options.json
+        ? JSON.stringify({ dir: ctx.dir, written, tellTheAgent: tell }, null, 2)
+        : [
+            `Board created in ${where}: ${written.join(", ")}.`,
+            `Participants: ${participants.map((entry) => `${entry.id} (${entry.kind})`).join(", ")}. Agents read ${path.join(where, "AGENTS.md")}.`,
+            "",
+            "Tell the agent, once, in the file it reads at the start of every session (CLAUDE.md, a root AGENTS.md or the like):",
+            `  ${tell.paragraph}`,
+            `Before that file says it, the first session starts with one sentence to the agent: "${tell.firstSentence}"`
+          ].join("\n")
+    );
     return 0;
   });
+}
+
+/**
+ * What the person tells the agent so that the board's cycle starts by itself (the README's step 2):
+ * the paragraph for the file the agent reads at the start of every session, and the one sentence
+ * that starts the first session, before that file says it. The periodic check is said with its
+ * condition: an agent has no timer of its own, so the paragraph names the one the person starts
+ * (Claude Code's `/loop`), and without one the check is at the start of the session and when asked.
+ */
+export function tellTheAgent(boardPath: string, agents: Array<{ id: string; name?: string }>, minutes: number, command: string): { paragraph: string; firstSentence: string } {
+  const one = agents.length === 1 ? agents[0] : undefined;
+  const as = one !== undefined ? one.id : "<you>";
+  const takePart =
+    one !== undefined
+      ? `take part as \`${one.id}\``
+      : `take part under your own id (${agents.map((agent) => `\`${agent.id}\`${agent.name !== undefined ? ` for ${agent.name}` : ""}`).join(", ")})`;
+  const check = `${command} check --as ${as}`;
+  return {
+    paragraph: `This repository has a Pinboard in ${boardPath}. Read ${boardPath}/AGENTS.md once per session, ${takePart}, and run \`${check}\` at the start of the session and whenever asked; check again every ${minutes} minutes while the session runs where you have a timer (Claude Code: \`/loop ${minutes}m ${check}\`).`,
+    firstSentence: one !== undefined ? `Read ${boardPath}/AGENTS.md and check the board as ${one.id}.` : `Read ${boardPath}/AGENTS.md and check the board under your own id.`
+  };
 }
 
 /** `--since`: a UTC time (2026-10-06T09:00:00Z), or a day (2026-10-06: from its first second, UTC). */
@@ -844,15 +880,18 @@ function rewritable(command: Command): Command {
 export interface BoardHost {
   /** The command's name: "board" when not given. */
   name?: string;
+  /** The words a person types for it, as `init` quotes them (`codelead board`): the name when not given, or `codelead board` for the default name. */
+  command?: string;
   /** Where the commands' words go (`say`) and what goes wrong outside them (`warn`); the console when not given. */
   log?: BoardLog;
   /** Makes the sanitizer the guard finds secrets and machine paths with; the board's own (core/sanitize.ts) when not given. */
   sanitizer?: SanitizerFactory;
 }
 
-/** The dependencies every command of a host's tree runs with. */
+/** The dependencies every command of a host's tree runs with; the command's words are the host's `command`, else its name (`pinboard`), else CodeLead's `codelead board`. */
 function hostDependencies(host: BoardHost): BoardCliDependencies {
-  return { ...(host.log ? { log: host.log } : {}), ...(host.sanitizer ? { sanitizer: host.sanitizer } : {}) };
+  const command = host.command ?? (host.name !== undefined && host.name !== "board" ? host.name : "codelead board");
+  return { command, ...(host.log ? { log: host.log } : {}), ...(host.sanitizer ? { sanitizer: host.sanitizer } : {}) };
 }
 
 /** The command tree (`board`, or the host's name): one command per action; each hands its options to its `runBoard…` function. */
