@@ -7,6 +7,11 @@ refuse, in words, and writes nothing then.
 
 It never calls a model and never runs code.
 
+![The board: seven columns, cards with their type, tags and the last line of their thread; a decision card shows its ask and the answer on its face.](docs/screenshots/board.png)
+
+*A demo board (made-up cards), one person and one agent. The screenshots in this file are from
+it.*
+
 You work on the page; the agent runs the commands; the files are the truth. "Using the board"
 below shows the day; the rest of this file is the reference.
 
@@ -172,6 +177,11 @@ served to this machine only. Leave the terminal running; if it stops, run the co
 **With the agent, as usual:** ask for the work in its session ("do card 1"); the card and its
 thread are its context. The board does not start work by itself and never calls a model.
 
+![A task card open on the page: description, the task's fields with what landed, related cards, and the thread with the agent's questions, the person's answers and the landing.](docs/screenshots/card.png)
+
+*A task after the work: the thread holds the agent's questions, the answers and what landed;
+"What landed" was filled by the landing comment.*
+
 ### What happens behind the scenes
 
 Nothing below is typed by you. The agent does it by itself, because the paragraph you added in
@@ -228,6 +238,8 @@ step 2 and `AGENTS.md` tell it to; you see the result on the page.
   on each machine (git ignores it).
 
 ### Every day after
+
+![The page with "Since you last looked" open: twelve changes on five cards, each with who did what and when.](docs/screenshots/whats-new.png)
 
 - **Open the page** (it is still running). The "@you" marks and "what changed since you last
   looked" show what needs you.
