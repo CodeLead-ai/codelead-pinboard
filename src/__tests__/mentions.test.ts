@@ -179,8 +179,8 @@ describe("the event says who it addresses: data.addressed, derived in the core, 
     // A comment and a move in one step: the comment says who it addresses; the move's `to` stays its column.
     const moved = moveCard(board.ctx, 1, { as: "claude", to: "for-review", comment: "@robin, for your review." });
     expect(moved.events.map((event) => [event.kind, event.data])).toEqual([
-      ["comment.added", { excerpt: "@robin, for your review.", addressed: ["robin"] }],
-      ["item.moved", { from: "inbox", to: "for-review" }]
+      ["comment.added", { excerpt: "@robin, for your review.", addressed: ["robin"], withMove: true }],
+      ["item.moved", { from: "inbox", to: "for-review", withComment: true }]
     ]);
     expect(moved.events.map(addressedTo)).toEqual([["robin"], []]);
   });
@@ -411,8 +411,8 @@ describe("the page's process: its writes say who they address, its notifications
     expect(created.body.events).toMatchObject([{ kind: "item.created", data: { addressed: ["claude"] } }]);
     const moved = await call<WritePayload>("POST", "/api/items/1/move", { to: "backlog", comment: "Moved; @claude, it waits for you there." });
     expect(moved.body.events.map((event) => [event.kind, event.data])).toEqual([
-      ["comment.added", { excerpt: "Moved; @claude, it waits for you there.", addressed: ["claude"] }],
-      ["item.moved", { from: "inbox", to: "backlog" }]
+      ["comment.added", { excerpt: "Moved; @claude, it waits for you there.", addressed: ["claude"], withMove: true }],
+      ["item.moved", { from: "inbox", to: "backlog", withComment: true }]
     ]);
   });
 

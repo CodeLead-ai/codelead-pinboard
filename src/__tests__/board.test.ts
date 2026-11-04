@@ -335,8 +335,8 @@ describe("events and cursors: a check shows exactly what came after the cursor",
         column: "backlog",
         type: "task",
         events: [
-          { at: "2026-10-04T10:02:00Z", by: "robin", item: 1, kind: "comment.added", data: { excerpt: "After packages 4 and 5." } },
-          { at: "2026-10-04T10:02:00Z", by: "robin", item: 1, kind: "item.moved", data: { from: "inbox", to: "backlog" } }
+          { at: "2026-10-04T10:02:00Z", by: "robin", item: 1, kind: "comment.added", data: { excerpt: "After packages 4 and 5.", withMove: true } },
+          { at: "2026-10-04T10:02:00Z", by: "robin", item: 1, kind: "item.moved", data: { from: "inbox", to: "backlog", withComment: true } }
         ]
       }
     ]);

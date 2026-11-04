@@ -63,14 +63,24 @@ export function describeEvent(event: BoardEvent, config?: BoardConfig): string {
 
 /**
  * A comment and a move written in one step ("Comment & move": the same time, the same participant,
- * the same card, next to each other), as the pair; undefined for any other two events.
+ * the same card, next to each other, in either order), as the pair; undefined for any other two
+ * events. The step marks its two events (`data.withMove` on the comment, `data.withComment` on the
+ * move): where either event is marked, only a marked move pairs, so a plain move of the same second
+ * (an agent's "In progress" a moment before its landing) stays its own line. Events written before
+ * the marks existed carry neither, and pair by time alone as they always did.
  */
 export function commentAndMove<T extends BoardEvent>(first: T, second: T | undefined): { comment: T; move: T } | undefined {
   if (!second || first.item === undefined || second.item === undefined || String(first.item) !== String(second.item)) return undefined;
   if (first.at !== second.at || first.by !== second.by) return undefined;
-  if (first.kind === "comment.added" && second.kind === "item.moved") return { comment: first, move: second };
-  if (first.kind === "item.moved" && second.kind === "comment.added") return { comment: second, move: first };
-  return undefined;
+  const pair =
+    first.kind === "comment.added" && second.kind === "item.moved"
+      ? { comment: first, move: second }
+      : first.kind === "item.moved" && second.kind === "comment.added"
+        ? { comment: second, move: first }
+        : undefined;
+  if (pair === undefined) return undefined;
+  const marked = pair.comment.data?.withMove !== undefined || pair.move.data?.withComment !== undefined;
+  return !marked || pair.move.data?.withComment === true ? pair : undefined;
 }
 
 /** A comment and a move written in one step, in one line: "commented and moved it to Done: <the comment's first words>". */

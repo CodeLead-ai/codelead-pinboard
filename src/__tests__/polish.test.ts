@@ -277,6 +277,34 @@ describe("the notification's words and the check", () => {
     expect(eventLines([...moved.events].reverse(), config).map((line) => [line.events.length, line.text])).toEqual([[2, "commented and moved it to For review: Landed: abc1234."]]);
   });
 
+  it("pairs the comment with the move of its own step, not with a plain move of the same second", async () => {
+    // An agent moves a card to In progress and, within the same second, lands it with a comment:
+    // the comment belongs to the second move, in both orders of the list.
+    const board = await newBoard();
+    createCard(board.ctx, "robin", { type: "task", title: "One" });
+    board.tick();
+    const started = moveCard(board.ctx, 1, { as: "claude", to: "in-progress" });
+    const landed = moveCard(board.ctx, 1, { as: "claude", to: "for-review", comment: "Landed: abc1234." });
+    expect(started.events[0]!.at).toBe(landed.events[0]!.at);
+    expect(landed.events.map((event) => [event.kind, event.data?.withMove, event.data?.withComment])).toEqual([
+      ["comment.added", true, undefined],
+      ["item.moved", undefined, true]
+    ]);
+    const { config } = readBoardConfig(board.dir);
+    const oldestFirst = [...started.events, ...landed.events];
+    expect(eventLines(oldestFirst, config).map((line) => line.text)).toEqual([
+      "moved it from Inbox to In progress",
+      "commented and moved it to For review: Landed: abc1234."
+    ]);
+    expect(eventLines([...oldestFirst].reverse(), config).map((line) => line.text)).toEqual([
+      "commented and moved it to For review: Landed: abc1234.",
+      "moved it from Inbox to In progress"
+    ]);
+    // Events from before the marks existed pair by time alone, as they always did.
+    const unmarked = oldestFirst.map((event) => ({ ...event, data: Object.fromEntries(Object.entries(event.data ?? {}).filter(([key]) => key !== "withMove" && key !== "withComment")) }));
+    expect(eventLines(unmarked.slice(1), config).map((line) => line.events.length)).toEqual([2]);
+  });
+
   it("leaves a change made without an event to the watcher when asked (synthesize: false); by default it announces it", async () => {
     const board = await newBoard();
     createCard(board.ctx, "robin", { type: "task", title: "One" });

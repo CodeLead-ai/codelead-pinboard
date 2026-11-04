@@ -811,7 +811,9 @@ export function addComment(ctx: BoardContext, id: CardId, input: { as: string; b
 
 /**
  * Moves a card into a column (an agent: only into its columns). With `comment`, the comment is
- * written first and both events carry the same time ("comment and move"). A card already in the
+ * written first, both events carry the same time, and each names the other (`data.withMove` on the
+ * comment, `data.withComment` on the move: "comment and move", one line wherever events are listed).
+ * A card already in the
  * column is left as it is, unless there is a comment to write or a place to put it.
  *
  * `after` is where the card was dropped: below that card of the column (its id), or at the top
@@ -838,7 +840,7 @@ export function moveCard(
       const rewritten: string[] = [];
       const body = checkedComment(pathWriting(ctx, config, input.rewriteHomePaths), input.comment, rewritten);
       comment = { author: input.as, at, body };
-      events.push({ at, by: input.as, item: card.id, kind: "comment.added", data: { ...commentData(body, config), ...rewrittenData(rewritten) } });
+      events.push({ at, by: input.as, item: card.id, kind: "comment.added", data: { ...commentData(body, config), ...rewrittenData(rewritten), withMove: true } });
     }
     const anchor =
       input.after === undefined || input.after === null
@@ -846,7 +848,7 @@ export function moveCard(
         : cards.find((other) => String(other.id) === String(input.after) && String(other.id) !== String(card.id) && other.column === column.id && other.archived === undefined);
     const placed = input.after === null || anchor !== undefined;
     if (card.column !== column.id || placed) {
-      events.push({ at, by: input.as, item: card.id, kind: "item.moved", data: { from: card.column, to: column.id, ...(anchor ? { after: anchor.id } : {}) } });
+      events.push({ at, by: input.as, item: card.id, kind: "item.moved", data: { from: card.column, to: column.id, ...(anchor ? { after: anchor.id } : {}), ...(comment ? { withComment: true } : {}) } });
     }
     return { next: { ...card, column: column.id }, ...(comment ? { comment } : {}), events };
   });
