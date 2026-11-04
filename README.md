@@ -22,6 +22,31 @@ The package holds:
 
 Node 22 or later. It depends on `commander` alone at run time.
 
+## Installing
+
+Two ways, both run as written on 2026-11-03 against the public repository:
+
+- **In one project**, as a dependency; the commands are then `npx pinboard …` in that repository:
+
+  ```sh
+  npm install github:CodeLead-ai/codelead-pinboard
+  npx pinboard init
+  ```
+
+- **On the machine**, for every repository; the commands are then `pinboard …` anywhere:
+
+  ```sh
+  git clone https://github.com/CodeLead-ai/codelead-pinboard.git
+  cd codelead-pinboard
+  npm install          # builds dist/
+  npm install -g .
+  ```
+
+  (`npm install -g github:CodeLead-ai/codelead-pinboard` does not work yet: npm builds the package
+  at install time without its build tools. The clone has them.)
+
+The package is not on the npm registry.
+
 ## Using the board
 
 The board is meant to take work off your hands, not to add a command line to your day. In
