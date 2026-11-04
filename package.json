@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Pinboard: the board between a person and their coding agents, kept as files in the repository (cards with threads, an event log, cursors), with its command line, its page and its import.",
   "private": true,
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

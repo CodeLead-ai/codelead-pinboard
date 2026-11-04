@@ -554,4 +554,4 @@ with Playwright's Chromium. They are skipped when Chromium cannot start
 
 ## Licence
 
-See `LICENSE`.
+MIT (`LICENSE`). Use it, change it, ship it with your own work; keep the copyright notice.
