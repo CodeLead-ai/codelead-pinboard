@@ -88,7 +88,8 @@ describe("codelead board, command by command, through each command's function", 
     // the conversation into cards (card #66) its four.
     // ... and the timer sentence of the check (the kick-off, 2026-11-03) its three.
     expect(guide).toContain("The check every 30 minutes needs a timer you do not have by yourself");
-    expect(guide.split("\n").length).toBeLessThanOrEqual(65);
+    // ... and the landing recorded from the comment (card #276, 2026-11-04) its two.
+    expect(guide.split("\n").length).toBeLessThanOrEqual(67);
     expect(fs.readFileSync(path.join(term.dir, ".gitignore"), "utf8")).toBe("cursors/\n.board.lock\nprivate-names.txt\n.*.tmp\n");
     expect(await runBoardInit({}, term.deps)).toBe(1);
     expect(term.said()).toBe(`A board is already at ${term.dir} (board.json is there); nothing was written.`);

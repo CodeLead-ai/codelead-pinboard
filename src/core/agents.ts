@@ -71,7 +71,7 @@ An event with \`data.decided\` is the person's answer to a decision card, record
 
 ## Work the person asked for
 When it is done: comment with what landed (the commit, the evidence record's id, the files),
-and move the card to ${review}.${done ? ` The person moves it to ${done}.` : ""}
+and move the card to ${review}.${done ? ` The person moves it to ${done}.` : ""} A comment that starts with \`Landed:\` fills the task's \`landed\` field (its first line) by itself.
 `);
 }
 

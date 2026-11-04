@@ -19,6 +19,7 @@ import {
   getCard,
   initBoard,
   listCards,
+  landingOf,
   moveCard,
   parseCardText,
   readBoardConfig,
@@ -271,10 +272,14 @@ describe("the notification's words and the check", () => {
     const { config } = readBoardConfig(board.dir);
     expect(eventLines([...moved.events, ...commented.events], config).map((line) => line.text)).toEqual([
       "commented and moved it to For review: Landed: abc1234.",
+      "recorded what landed: abc1234.",
       "commented: And the evidence record."
     ]);
-    // Newest first, as the list shows them: still one line.
-    expect(eventLines([...moved.events].reverse(), config).map((line) => [line.events.length, line.text])).toEqual([[2, "commented and moved it to For review: Landed: abc1234."]]);
+    // Newest first, as the list shows them: still one line for the pair.
+    expect(eventLines([...moved.events].reverse(), config).map((line) => [line.events.length, line.text])).toEqual([
+      [1, "recorded what landed: abc1234."],
+      [2, "commented and moved it to For review: Landed: abc1234."]
+    ]);
   });
 
   it("pairs the comment with the move of its own step, not with a plain move of the same second", async () => {
@@ -288,21 +293,58 @@ describe("the notification's words and the check", () => {
     expect(started.events[0]!.at).toBe(landed.events[0]!.at);
     expect(landed.events.map((event) => [event.kind, event.data?.withMove, event.data?.withComment])).toEqual([
       ["comment.added", true, undefined],
-      ["item.moved", undefined, true]
+      ["item.moved", undefined, true],
+      ["item.updated", undefined, undefined]
     ]);
     const { config } = readBoardConfig(board.dir);
     const oldestFirst = [...started.events, ...landed.events];
     expect(eventLines(oldestFirst, config).map((line) => line.text)).toEqual([
       "moved it from Inbox to In progress",
-      "commented and moved it to For review: Landed: abc1234."
+      "commented and moved it to For review: Landed: abc1234.",
+      "recorded what landed: abc1234."
     ]);
     expect(eventLines([...oldestFirst].reverse(), config).map((line) => line.text)).toEqual([
+      "recorded what landed: abc1234.",
       "commented and moved it to For review: Landed: abc1234.",
       "moved it from Inbox to In progress"
     ]);
     // Events from before the marks existed pair by time alone, as they always did.
     const unmarked = oldestFirst.map((event) => ({ ...event, data: Object.fromEntries(Object.entries(event.data ?? {}).filter(([key]) => key !== "withMove" && key !== "withComment")) }));
-    expect(eventLines(unmarked.slice(1), config).map((line) => line.events.length)).toEqual([2]);
+    expect(eventLines(unmarked.slice(1), config).map((line) => line.events.length)).toEqual([2, 1]);
+  });
+
+  it("records what landed from the comment of a move: the first line after \"Landed:\" becomes an entry of a task's landed field", async () => {
+    const board = await newBoard();
+    createCard(board.ctx, "robin", { type: "task", title: "One" });
+    createCard(board.ctx, "robin", { type: "idea", title: "Not a task" });
+    createCard(board.ctx, "robin", { type: "task", title: "Already", fields: { landed: "a1b2c3d on main (2 tests)." } });
+    board.tick();
+    const landed = moveCard(board.ctx, 1, { as: "claude", to: "for-review", comment: "Landed: 4f2a9c1 on main; src/a.ts, test/a.test.ts (6 tests).\nThe page is at /sign-in." });
+    expect(landed.card.fields.landed).toEqual(["4f2a9c1 on main; src/a.ts, test/a.test.ts (6 tests)."]);
+    expect(landed.events.map((event) => event.kind)).toEqual(["comment.added", "item.moved", "item.updated"]);
+    expect(landed.events[2]!.data).toEqual({ fields: ["fields"], landed: "4f2a9c1 on main; src/a.ts, test/a.test.ts (6 tests)." });
+    const { config } = readBoardConfig(board.dir);
+    expect(eventLines(landed.events, config).map((line) => line.text)).toEqual([
+      "commented and moved it to For review: Landed: 4f2a9c1 on main; src/a.ts, test/a.test.ts (6 tests). The page is at /sign-in.",
+      "recorded what landed: 4f2a9c1 on main; src/a.ts, test/a.test.ts (6 tests)."
+    ]);
+    // The same landing again (a second move with the same words) is not written twice; a second landing is one more entry.
+    board.tick();
+    expect(moveCard(board.ctx, 1, { as: "claude", to: "in-progress", comment: "Landed: 4f2a9c1 on main; src/a.ts, test/a.test.ts (6 tests)." }).events.map((event) => event.kind)).toEqual(["comment.added", "item.moved"]);
+    board.tick();
+    expect(moveCard(board.ctx, 1, { as: "claude", to: "for-review", comment: "landed:  9c0d2aa on main; the fix (1 test)." }).card.fields.landed).toEqual([
+      "4f2a9c1 on main; src/a.ts, test/a.test.ts (6 tests).",
+      "9c0d2aa on main; the fix (1 test)."
+    ]);
+    // A comment that does not start so, or a card whose type has no landed field, leaves the fields alone.
+    board.tick();
+    expect(moveCard(board.ctx, 1, { as: "robin", to: "done", comment: "Tried it; it landed well." }).events.map((event) => event.kind)).toEqual(["comment.added", "item.moved"]);
+    expect(moveCard(board.ctx, 2, { as: "claude", to: "for-review", comment: "Landed: words on an idea." }).card.fields).toEqual({});
+    // A field that held one text becomes a list of it and the new entry.
+    expect(moveCard(board.ctx, 3, { as: "claude", to: "for-review", comment: "Landed: e5f6a7b on main (3 tests)." }).card.fields.landed).toEqual(["a1b2c3d on main (2 tests).", "e5f6a7b on main (3 tests)."]);
+    expect(landingOf("  \n Landed:   abc  ")).toBe("abc");
+    expect(landingOf("Landed:")).toBeUndefined();
+    expect(landingOf("It landed: abc")).toBeUndefined();
   });
 
   it("leaves a change made without an event to the watcher when asked (synthesize: false); by default it announces it", async () => {
@@ -404,10 +446,11 @@ describe("codelead board set --color, --field and --unset-field; new --field; sh
     await runBoardSetupMove(term);
     expect(await runBoardCheck({ as: "robin" }, term.deps)).toBe(0);
     expect(term.said().split("\n")).toEqual([
-      "robin: 2 new on 1 card since 2026-10-05T10:00:00Z.",
+      "robin: 3 new on 1 card since 2026-10-05T10:00:00Z.",
       "",
       "#1 One  (task · For review)",
       "  claude · 2026-10-05T10:01:00Z  commented and moved it to For review: Landed: abc1234.",
+      "  claude · 2026-10-05T10:01:00Z  recorded what landed: abc1234.",
       "",
       "Run again with --ack once these are dealt with. Next check in 30 minutes."
     ]);
@@ -600,7 +643,7 @@ describe("the process: the colour, the ask, the place of a card, one line for a 
     expect(wrong.body.message).toBe('Refused: "after" names the card the moved card goes below (its id), or null for the top; "two!" is neither. Nothing was written.');
   });
 
-  it("GET /api/notifications: a comment and a move written in one step are one line, and still two events in the count", async () => {
+  it("GET /api/notifications: a comment and a move written in one step are one line, and still two events in the count (three with what landed)", async () => {
     const board = await newBoard();
     createCard(board.ctx, "robin", { type: "task", title: "One" });
     checkBoard(board.ctx, { as: "robin", ack: true });
@@ -608,9 +651,10 @@ describe("the process: the colour, the ask, the place of a card, one line for a 
     moveCard(board.ctx, 1, { as: "claude", to: "for-review", comment: "Landed: abc1234." });
     const { call } = await serve(board);
     const { body } = await call<NotificationsPayload>("GET", "/api/notifications");
-    expect(body.count).toBe(2);
+    expect(body.count).toBe(3);
     expect(body.groups).toHaveLength(1);
     expect(body.groups[0]!.events).toEqual([
+      expect.objectContaining({ by: "claude", kind: "item.updated", text: "recorded what landed: abc1234." }),
       expect.objectContaining({ by: "claude", byName: "Claude Code", kind: "comment.added", text: "commented and moved it to For review: Landed: abc1234.", merged: ["item.moved", "comment.added"] })
     ]);
   });

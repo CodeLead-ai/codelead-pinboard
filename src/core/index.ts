@@ -42,6 +42,7 @@ export {
   listCards,
   markOpened,
   matchesFilter,
+  landingOf,
   moveCard,
   parseCardId,
   readBoard,

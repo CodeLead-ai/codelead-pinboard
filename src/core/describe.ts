@@ -26,6 +26,8 @@ export function describeEvent(event: BoardEvent, config?: BoardConfig): string {
     case "item.updated": {
       const fields = Array.isArray(data.fields) ? (data.fields as unknown[]).map(String) : [];
       if (data.synthesized) return `changed its file with no event${fields.length > 0 ? ` (${fields.join(", ")})` : ""}`;
+      // A landing recorded from the comment of a move (`data.landed`) is said as that.
+      if (typeof data.landed === "string") return `recorded what landed: ${data.landed}`;
       // A decision recorded in the card's fields is said as the decision, not as "changed its fields";
       // what else the same write changed comes first.
       const decision = decisionOf(event);

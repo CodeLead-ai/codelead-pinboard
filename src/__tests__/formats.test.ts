@@ -172,7 +172,8 @@ describe("the design's examples are the formats (golden files)", () => {
       "",
       "## Work the person asked for",
       "When it is done: comment with what landed (the commit, the evidence record's id, the files),",
-      "and move the card to For review. The person moves it to Done.",
+      "and move the card to For review. The person moves it to Done. A comment that starts with",
+      "`Landed:` fills the task's `landed` field (its first line) by itself.",
       ""
     ].join("\n");
     expect(agentsGuide(config)).toBe(expected);

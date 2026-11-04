@@ -203,6 +203,9 @@ step 2 and `AGENTS.md` tell it to; you see the result on the page.
   Moved #1 from In progress to For review, with the comment.
   ```
 
+  A comment whose first line starts with `Landed:` also fills the card's "What landed" field
+  (that line, after the word) by itself, so the card's face shows it without a second write.
+
 - **It is held to the rules.** The same guard runs under the page, the commands and a host's
   code; a refusal writes nothing and says why:
 

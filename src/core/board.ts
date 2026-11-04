@@ -45,6 +45,7 @@ import {
   EVENT_KINDS,
   RELATION_KINDS,
   RELATION_SEEN_FROM_TARGET,
+  TYPE_FIELDS,
   UNKNOWN_PARTICIPANT,
   type Attachment,
   type BoardColumn,
@@ -825,6 +826,11 @@ export function addComment(ctx: BoardContext, id: CardId, input: { as: string; b
  *
  * The comment's paths of this machine are cited as `addComment` cites them, with the same
  * `rewriteHomePaths`.
+ *
+ * A landing is recorded where the card's face shows it: when the comment's first line starts with
+ * `Landed:` (what AGENTS.md teaches for work that is done) and the card's type has a `landed` field
+ * (a task), the words after `Landed:` on that line become one more entry of the field, with an
+ * `item.updated` event that says so (`data.landed`). An entry already there is not written twice.
  */
 export function moveCard(
   ctx: BoardContext,
@@ -850,8 +856,30 @@ export function moveCard(
     if (card.column !== column.id || placed) {
       events.push({ at, by: input.as, item: card.id, kind: "item.moved", data: { from: card.column, to: column.id, ...(anchor ? { after: anchor.id } : {}), ...(comment ? { withComment: true } : {}) } });
     }
-    return { next: { ...card, column: column.id }, ...(comment ? { comment } : {}), events };
+    let fields = card.fields;
+    const landing = comment !== undefined ? landingOf(comment.body) : undefined;
+    if (landing !== undefined && (TYPE_FIELDS[card.type] ?? []).includes("landed")) {
+      const had = landedEntries(card.fields.landed);
+      if (!had.includes(landing)) {
+        fields = { ...card.fields, landed: [...had, landing] };
+        events.push({ at, by: input.as, item: card.id, kind: "item.updated", data: { fields: ["fields"], landed: landing } });
+      }
+    }
+    return { next: { ...card, column: column.id, fields }, ...(comment ? { comment } : {}), events };
   });
+}
+
+/** The words after `Landed:` on a comment's first line, or undefined when the comment does not start so. */
+export function landingOf(body: string): string | undefined {
+  const first = body.split("\n").find((line) => line.trim() !== "") ?? "";
+  const match = /^\s*landed:\s*(.*\S)\s*$/i.exec(first);
+  return match ? match[1] : undefined;
+}
+
+/** A `landed` field's entries as texts: a list as given, one text as one entry, nothing as none. */
+function landedEntries(value: YamlValue | undefined): string[] {
+  if (value === undefined || value === null || value === "") return [];
+  return (Array.isArray(value) ? value : [value]).map((entry) => (typeof entry === "string" ? entry : JSON.stringify(entry)));
 }
 
 export interface CardChanges {
