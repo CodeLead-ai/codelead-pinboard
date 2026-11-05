@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import type { BoardPayload, CardChangesInput, CardColor, CardDetail } from "../../server/contract.js";
-import { DecidedEditor, EditableList, EditableText, GrowingText, SizePicker, TagEditor, type Decided } from "./Editors.js";
+import { DecidedEditor, EditableList, EditableText, GrowingText, PreviewModes, PreviewPane, SizePicker, TagEditor, usePreviewMode, type Decided } from "./Editors.js";
 import { ActivityIcon, ArchiveIcon, ChevronDown, ChevronLeft, CloseIcon, FileIcon, TypeChip } from "./icons.js";
 import { Markdown } from "./Markdown.js";
 import { ago, classes, clock, columnName, FIELD_LABELS, isAgent, LIST_FIELDS, MARKDOWN_FIELDS, participantName, plural, RELATION_WORDS } from "./model.js";
@@ -468,7 +468,14 @@ export function CardPanel({ board, id, detail, error, below, crumbs, cards, know
                   );
                 })}
               </ol>
-              <Reply board={board} column={card.column} onSend={(body, moveTo) => actions.comment(id, body, card.updated, moveTo)} />
+              <Reply
+                board={board}
+                column={card.column}
+                onSend={(body, moveTo) => actions.comment(id, body, card.updated, moveTo)}
+                preview={(draft) => (
+                  <Markdown text={draft} mentions={detail.mentions} cards={cards} participants={board.participants} viewer={board.person.id} onOpenCard={actions.openRelated} className="comment-body" />
+                )}
+              />
             </Section>
 
             <details className="panel-more" data-testid="panel-activity">
@@ -493,9 +500,24 @@ export function CardPanel({ board, id, detail, error, below, crumbs, cards, know
   );
 }
 
-/** The reply box (spec 6.2): Comment, or Comment & move in one step ("answered, to Done"). */
-function Reply({ board, column, onSend }: { board: BoardPayload; column: string; onSend: (body: string, moveTo?: string) => Promise<string | null> }) {
+/**
+ * The reply box (spec 6.2): Comment, or Comment & move in one step ("answered, to Done"). The comment is seen rendered while it is
+ * written, alone or side by side, as the description is (card #284), with the thread's own renderer.
+ */
+function Reply({
+  board,
+  column,
+  onSend,
+  preview
+}: {
+  board: BoardPayload;
+  column: string;
+  onSend: (body: string, moveTo?: string) => Promise<string | null>;
+  /** Renders the draft as the thread will show it. */
+  preview: (draft: string) => ReactNode;
+}) {
   const [text, setText] = useState("");
+  const [mode, choose] = usePreviewMode();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
@@ -532,26 +554,32 @@ function Reply({ board, column, onSend }: { board: BoardPayload; column: string;
     }
   };
   const empty = text.trim() === "";
+  const sendKeys = (event: { key: string; metaKey: boolean; ctrlKey: boolean; preventDefault: () => void }): void => {
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      void send();
+    }
+  };
   return (
-    <div className="reply" data-testid="reply">
-      <GrowingText
-        className="field-input"
-        value={text}
-        onChange={setText}
-        minRows={3}
-        maxRows={14}
-        placeholder="Write a comment (markdown); type @ to address someone…"
-        aria-label="Write a comment"
-        mentions={board.participants}
-        viewer={board.person.id}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-            event.preventDefault();
-            void send();
-          }
-        }}
-        data-testid="reply-text"
-      />
+    <div className={classes("reply", `editor-${mode}`)} data-testid="reply" onKeyDown={mode === "preview" ? sendKeys : undefined}>
+      <PreviewModes shown={mode} onChoose={choose} testId="reply-preview" />
+      <div className="editor-panes">
+        <GrowingText
+          className={classes("field-input", mode === "preview" && "pane-hidden")}
+          value={text}
+          onChange={setText}
+          minRows={3}
+          maxRows={14}
+          placeholder="Write a comment (markdown); type @ to address someone…"
+          aria-label="Write a comment"
+          mentions={board.participants}
+          viewer={board.person.id}
+          hidden={mode === "preview"}
+          onKeyDown={sendKeys}
+          data-testid="reply-text"
+        />
+        {mode !== "write" ? <PreviewPane draft={text} preview={preview} testId="reply-preview" /> : null}
+      </div>
       {error ? (
         <p className="refusal" role="alert">
           {error}

@@ -2594,6 +2594,14 @@ select.field-input {
   box-shadow: none;
 }
 
+.reply .preview-modes {
+  margin: 2px 0 8px;
+}
+
+.reply .preview-pane {
+  min-height: 72px;
+}
+
 .reply-actions {
   display: flex;
   align-items: center;

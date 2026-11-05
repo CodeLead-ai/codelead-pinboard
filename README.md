@@ -163,8 +163,9 @@ served to this machine only. Leave the terminal running; if it stops, run the co
 - **Write a card:** a title, a type (task, question, decision, idea, review, note), a
   description in markdown. It lands in Inbox. That is how you ask an agent for something, or
   note something for later.
-- **Read and answer:** open a card, read its thread, write a comment; type `@` to address
-  someone (`@claude`): their next check lists that card first.
+- **Read and answer:** open a card, read its thread, write a comment (seen rendered as you
+  write, alone or side by side, like the description); type `@` to address someone
+  (`@claude`): their next check lists that card first.
 - **Move cards** by dragging. **Pinned** and **Done** are yours alone: no agent moves a card
   into them.
 - **Decide:** a decision card shows the ask on its face; your answer goes in its `decided`

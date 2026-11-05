@@ -258,6 +258,29 @@ describe.skipIf(!browser)("the board's page in a browser: package 2b", () => {
     await page.keyboard.press("Escape");
   });
 
+  it("previews a comment's markdown while it is written, alone or side by side, with the thread's renderer (card #284)", async () => {
+    await tile(7).click();
+    await expect.poll(() => panel().locator(".panel-title").textContent()).toBe("Try a version key");
+    const reply = panel().getByTestId("reply");
+    const box = reply.getByTestId("reply-text");
+    await box.fill("Seen **rendered** first, then #1.");
+    await reply.getByTestId("reply-preview-preview").click();
+    const pane = reply.getByTestId("reply-preview-pane");
+    expect(await pane.locator("strong").textContent()).toBe("rendered");
+    expect(await pane.locator("a.ref-card[data-card='1']").count()).toBe(1);
+    expect(await box.isVisible()).toBe(false);
+    await reply.getByTestId("reply-preview-split").click();
+    expect(await box.isVisible()).toBe(true);
+    expect(await pane.isVisible()).toBe(true);
+    await reply.getByTestId("reply-preview-write").click();
+    expect(await pane.count()).toBe(0);
+    expect(await box.inputValue()).toBe("Seen **rendered** first, then #1.");
+    await reply.getByTestId("reply-send").click();
+    await expect.poll(() => panel().locator(".comment-body strong", { hasText: "rendered" }).count()).toBe(1);
+    expect(await box.inputValue()).toBe("");
+    await page.keyboard.press("Escape");
+  });
+
   it("closes the whole stack on a click outside, when a related card is open on top (Esc steps back one)", async () => {
     await tile(7).click();
     await expect.poll(() => panel().locator(".panel-title").textContent()).toBe("Try a version key");

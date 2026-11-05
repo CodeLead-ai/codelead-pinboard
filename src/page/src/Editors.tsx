@@ -155,6 +155,46 @@ function readPreviewMode(): PreviewMode {
   }
 }
 
+/**
+ * The mode a markdown text is seen in while it is written, kept across editors and comment boxes (card #284: the reply box
+ * previews the same way as the description): "write" or "split" is remembered for the next one, "preview" is a look.
+ */
+export function usePreviewMode(): [PreviewMode, (next: PreviewMode) => void] {
+  const [mode, setMode] = useState<PreviewMode>(readPreviewMode);
+  const choose = (next: PreviewMode): void => {
+    setMode(next);
+    if (next === "preview") return;
+    try {
+      localStorage.setItem("pinboard.preview", next);
+    } catch {
+      // No storage: the choice lasts as long as the page.
+    }
+  };
+  return [mode, choose];
+}
+
+/** The strip of the three modes: Write, Preview, Side by side. */
+export function PreviewModes({ shown, onChoose, testId = "preview" }: { shown: PreviewMode; onChoose: (next: PreviewMode) => void; testId?: string }) {
+  return (
+    <div className="segmented preview-modes" role="group" aria-label="Write, or see it rendered" data-testid={`${testId}-modes`}>
+      {PREVIEW_MODES.map(([entry, words]) => (
+        <button key={entry} type="button" aria-pressed={shown === entry} className={classes(shown === entry && "on")} onClick={() => onChoose(entry)} data-testid={`${testId}-${entry}`}>
+          {words}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** The rendering of a draft beside or in place of its source; empty words when nothing is written yet. */
+export function PreviewPane({ draft, preview, testId = "preview" }: { draft: string; preview: (draft: string) => ReactNode; testId?: string }) {
+  return (
+    <div className="preview-pane" data-testid={`${testId}-pane`} aria-label="How it will read">
+      {draft.trim() === "" ? <p className="empty-words">Nothing written yet.</p> : preview(draft)}
+    </div>
+  );
+}
+
 /** A text field: one line, or markdown over several; shown as `display` until edited. With `preview`, the markdown can be seen rendered while it is edited. */
 export function EditableText({
   label,
@@ -190,7 +230,7 @@ export function EditableText({
 }) {
   const edit = useEdit(updated, onSave);
   const [draft, setDraft] = useState(value);
-  const [mode, setMode] = useState<PreviewMode>(readPreviewMode);
+  const [mode, choose] = usePreviewMode();
   const begunWith = useRef(value);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -204,29 +244,12 @@ export function EditableText({
   const save = (): void => {
     void edit.commit(draft);
   };
-  const choose = (next: PreviewMode): void => {
-    setMode(next);
-    if (next === "preview") return;
-    try {
-      localStorage.setItem("pinboard.preview", next);
-    } catch {
-      // No storage: the choice lasts as long as the page.
-    }
-  };
   if (edit.editing) {
     const previewing = multiline && preview !== undefined;
     const shown = previewing ? mode : "write";
     return (
       <div className={classes("editor", className, previewing && `editor-${shown}`)} data-testid={testId ? `${testId}-editor` : undefined} onKeyDown={previewing ? editKeys(save, edit.cancel) : undefined}>
-        {previewing ? (
-          <div className="segmented preview-modes" role="group" aria-label="Write, or see it rendered" data-testid="preview-modes">
-            {PREVIEW_MODES.map(([entry, words]) => (
-              <button key={entry} type="button" aria-pressed={shown === entry} className={classes(shown === entry && "on")} onClick={() => choose(entry)} data-testid={`preview-${entry}`}>
-                {words}
-              </button>
-            ))}
-          </div>
-        ) : null}
+        {previewing ? <PreviewModes shown={shown} onChoose={choose} /> : null}
         {multiline ? (
           <div className="editor-panes">
             <GrowingText
@@ -241,11 +264,7 @@ export function EditableText({
               mentions={mentions}
               viewer={viewer}
             />
-            {previewing && shown !== "write" ? (
-              <div className="preview-pane" data-testid="preview-pane" aria-label="How it will read">
-                {draft.trim() === "" ? <p className="empty-words">Nothing written yet.</p> : preview(draft)}
-              </div>
-            ) : null}
+            {previewing && shown !== "write" ? <PreviewPane draft={draft} preview={preview} /> : null}
           </div>
         ) : (
           <input ref={input} className="field-input" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={editKeys(save, edit.cancel)} aria-label={label} />
