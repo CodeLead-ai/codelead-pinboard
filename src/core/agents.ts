@@ -72,6 +72,28 @@ An event with \`data.decided\` is the person's answer to a decision card, record
 ## Work the person asked for
 When it is done: comment with what landed (the commit, the evidence record's id, the files),
 and move the card to ${review}.${done ? ` The person moves it to ${done}.` : ""} A comment that starts with \`Landed:\` fills the task's \`landed\` field (its first line) by itself.
+${codeleadSection(config)}`);
+}
+
+/**
+ * The section a board gets when CodeLead itself takes part (its column `queued`, "Queued for CodeLead" in CodeLead's own words): what
+ * CodeLead writes on a card as the participant `codelead`, what it never writes, and how the person steers it. Empty for a board
+ * without the column.
+ */
+function codeleadSection(config: BoardConfig): string {
+  const queue = config.columns.find((column) => column.id === "queued");
+  if (!queue) return "";
+  const working = config.columns.find((column) => column.id === "in-progress")?.name ?? "In progress";
+  const review = config.columns.find((column) => column.id === "for-review")?.name ?? "the review column";
+  const personColumns = config.columns.filter((column) => column.owner === "person").map((column) => column.name);
+  const never = personColumns.length === 0 ? "a person's column" : personColumns.length === 1 ? personColumns[0]! : `${personColumns.slice(0, -1).join(", ")} or ${personColumns[personColumns.length - 1]}`;
+  return wrapLong(`
+## CodeLead on the board
+CodeLead takes part as the participant \`codelead\` (an agent), on every card it works, in the session (\`/implement --card <id>\`) and unattended (\`codelead implement --card <id>\`, \`codelead implement --queue\`). The card is the request: its title, its description, the person's comments (as clarifications), its related cards and attachments.
+- The queue is the column "${queue.name}". The person drags a card in; CodeLead takes the top card and moves it to ${working}. Agents do not move cards into the queue and do not take cards from it.
+- CodeLead writes: \`Started:\` when it starts, with the lint of the card's text; in an unattended run, one comment with the questions the preflight asked and the answers it took; at the end, \`Landed:\` from the evidence record (the card moves to ${review}), or \`Stopped:\` with the reason and the options, addressed to the person (the card stays where it is).
+- CodeLead never writes a decision (\`fields.decided\`) and never moves a card into ${never}. An agent does not write CodeLead's comments for it.
+- To run a card again: answer in its thread, and drag it back to ${queue.name}.
 `);
 }
 

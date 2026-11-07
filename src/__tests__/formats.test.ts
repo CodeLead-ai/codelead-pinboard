@@ -389,3 +389,18 @@ describe("the front matter's YAML", () => {
     expect(parseYamlMapping(lines.join("\n"))).toEqual({ fields });
   });
 });
+
+describe("AGENTS.md for a board CodeLead joined", () => {
+  it("gains the CodeLead section only when the board has the queue column", () => {
+    const plain = defaultBoardConfig({ name: "plain", participants: [{ id: "robin", kind: "person", name: "Robin" }] });
+    expect(agentsGuide(plain)).not.toContain("## CodeLead on the board");
+    const columns = [...plain.columns];
+    columns.splice(columns.findIndex((column) => column.id === "in-progress"), 0, { id: "queued", name: "Queued for CodeLead" });
+    const joined = { ...plain, columns, participants: [...plain.participants, { id: "codelead", kind: "agent" as const, name: "CodeLead" }] };
+    const guide = agentsGuide(joined);
+    expect(guide).toContain("## CodeLead on the board");
+    expect(guide).toContain('The queue is the column "Queued for CodeLead"');
+    expect(guide).toContain("never moves a card into Pinned or Done");
+    expect(guide.endsWith("\n")).toBe(true);
+  });
+});
