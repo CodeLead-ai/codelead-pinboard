@@ -400,7 +400,7 @@ describe("AGENTS.md for a board CodeLead joined", () => {
     const guide = agentsGuide(joined);
     expect(guide).toContain("## CodeLead on the board");
     expect(guide).toContain('The queue is the column "Queued for CodeLead"');
-    expect(guide).toContain("never moves a card into Pinned or Done");
+    expect(guide.replace(/\n  /g, " ")).toContain("never moves a card into Pinned or Done");
     expect(guide.endsWith("\n")).toBe(true);
   });
 });
