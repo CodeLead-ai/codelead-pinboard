@@ -195,6 +195,7 @@ export function tagGroups(cards: CardSummary[], reserved: string[]): TagGroup[] 
 /** The spec's words under a column's name (6.1). */
 export const COLUMN_NOTES: Record<string, string> = {
   pinned: "waits on you",
+  queued: "CodeLead takes the top card",
   "in-progress": "an agent is on it",
   "for-review": "your look"
 };
@@ -205,6 +206,7 @@ export const EMPTY_WORDS: Record<string, string> = {
   backlog: "Nothing planned. Cards wait here until they start.",
   ideas: "No ideas parked yet.",
   pinned: "No card waits on you.",
+  queued: "Nothing queued for CodeLead. Drag a card here and it runs next.",
   "in-progress": "No agent is on a card.",
   "for-review": "Nothing waits for your look.",
   done: "Nothing is done yet."
