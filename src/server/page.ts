@@ -169,7 +169,9 @@ export function contentSecurityPolicy(html: string): string {
     "object-src 'none'",
     "base-uri 'none'",
     "form-action 'none'",
-    "frame-ancestors 'none'"
+    // The page may be framed by a VS Code webview (the CodeLead extension hosts the board as a tab, card #268/#286) and by
+    // nothing else: the server listens on the loopback only, and a stranger's page framing it would still be refused.
+    "frame-ancestors 'self' vscode-webview:"
   ].join("; ");
 }
 
