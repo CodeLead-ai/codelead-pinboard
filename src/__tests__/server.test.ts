@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import http from "node:http";
@@ -575,6 +576,27 @@ describe("codelead board serve", () => {
     const board = (await (await fetch(new URL("/api/board", served))).json()) as BoardPayload;
     expect(board.cards).toHaveLength(3);
     controller.abort();
+    expect(await running).toBe(0);
+    expect(lines[lines.length - 1]).toBe("Pinboard stopped.");
+    await expect(fetch(new URL("/api/board", served))).rejects.toThrow();
+  });
+
+  it("stops when the stdin pipe it was started with ends (a window's server dies with its window)", async () => {
+    const f = await fixture();
+    seed(f);
+    const lines: string[] = [];
+    const controller = new AbortController();
+    let served = "";
+    const stdin = Object.assign(new EventEmitter(), { isTTY: false, resumed: 0, resume() { this.resumed += 1; return this; } });
+    const running = runBoardServe(
+      { port: "0", board: f.dir },
+      { cwd: () => f.root, output: (line) => lines.push(line), home: "/home/tester", pageDir: f.pageDir, signal: controller.signal, started: (url) => (served = url), stdin }
+    );
+    cleanups.push(() => controller.abort());
+    for (let waited = 0; served === "" && waited < 3000; waited += 20) await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(served).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/);
+    expect(stdin.resumed).toBe(1);
+    stdin.emit("end");
     expect(await running).toBe(0);
     expect(lines[lines.length - 1]).toBe("Pinboard stopped.");
     await expect(fetch(new URL("/api/board", served))).rejects.toThrow();

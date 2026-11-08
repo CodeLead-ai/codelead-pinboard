@@ -179,6 +179,8 @@ export interface BoardServeDependencies extends BoardCliDependencies {
   openUrl?: (url: string) => void;
   /** How long a card file must be quiet before a change without an event is announced (the process's default when not given). */
   settleMs?: number;
+  /** The process's stdin: when it is a pipe (not a TTY), its end stops the board. The real one when not given. */
+  stdin?: { isTTY?: boolean; once(event: "end" | "close", listener: () => void): unknown; resume(): unknown };
 }
 
 /** The port `serve` tries first, so that a bookmarked filter keeps working; a free one when it is taken. */
@@ -843,6 +845,15 @@ export async function runBoardServe(options: BoardServeOptions, dependencies: Bo
       signal?.removeEventListener("abort", stop);
       resolve();
     };
+    // Started by another program with a pipe for stdin (the CodeLead VS Code extension hosts the page in a tab): the server
+    // ends when that pipe closes, so a window that goes away takes its server with it instead of leaving one listening on
+    // its port with yesterday's page (seen 2026-11-07). A person's terminal keeps a TTY stdin, which never ends this way.
+    const stdin = dependencies.stdin ?? process.stdin;
+    if (stdin && !stdin.isTTY) {
+      stdin.once("end", stop);
+      stdin.once("close", stop);
+      stdin.resume();
+    }
     if (signal) {
       if (signal.aborted) stop();
       else signal.addEventListener("abort", stop, { once: true });
