@@ -590,7 +590,7 @@ describe("codelead board serve", () => {
     const stdin = Object.assign(new EventEmitter(), { isTTY: false, resumed: 0, resume() { this.resumed += 1; return this; } });
     const running = runBoardServe(
       { port: "0", board: f.dir },
-      { cwd: () => f.root, output: (line) => lines.push(line), home: "/home/tester", pageDir: f.pageDir, signal: controller.signal, started: (url) => (served = url), stdin }
+      { cwd: () => f.root, output: (line) => lines.push(line), home: "/home/tester", pageDir: f.pageDir, signal: controller.signal, started: (url) => (served = url), stdin, stdinIsPipe: () => true }
     );
     cleanups.push(() => controller.abort());
     for (let waited = 0; served === "" && waited < 3000; waited += 20) await new Promise((resolve) => setTimeout(resolve, 20));

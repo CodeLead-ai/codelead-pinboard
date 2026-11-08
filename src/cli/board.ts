@@ -179,8 +179,20 @@ export interface BoardServeDependencies extends BoardCliDependencies {
   openUrl?: (url: string) => void;
   /** How long a card file must be quiet before a change without an event is announced (the process's default when not given). */
   settleMs?: number;
-  /** The process's stdin: when it is a pipe (not a TTY), its end stops the board. The real one when not given. */
+  /** The process's stdin: when it is a pipe from a parent program, its end stops the board. The real one when not given. */
   stdin?: { isTTY?: boolean; once(event: "end" | "close", listener: () => void): unknown; resume(): unknown };
+  /** Whether stdin is a pipe or a socket from a parent program (never a terminal or /dev/null). `fstat(0)` when not given. */
+  stdinIsPipe?: () => boolean;
+}
+
+/** True when file descriptor 0 is a pipe or a socket: a parent program holds its other end. */
+function stdinIsPipe(): boolean {
+  try {
+    const stat = fs.fstatSync(0);
+    return stat.isFIFO() || stat.isSocket();
+  } catch {
+    return false;
+  }
 }
 
 /** The port `serve` tries first, so that a bookmarked filter keeps working; a free one when it is taken. */
@@ -848,8 +860,11 @@ export async function runBoardServe(options: BoardServeOptions, dependencies: Bo
     // Started by another program with a pipe for stdin (the CodeLead VS Code extension hosts the page in a tab): the server
     // ends when that pipe closes, so a window that goes away takes its server with it instead of leaving one listening on
     // its port with yesterday's page (seen 2026-11-07). A person's terminal keeps a TTY stdin, which never ends this way.
+    // Only a pipe or a socket counts: a stdin of /dev/null (a parent that ignores it) or a terminal ends at once or never,
+    // and neither says anything about the parent's life (2026-11-08: the extension spawned the server with stdin ignored,
+    // and the server left before the page loaded).
     const stdin = dependencies.stdin ?? process.stdin;
-    if (stdin && !stdin.isTTY) {
+    if (stdin && (dependencies.stdinIsPipe ?? stdinIsPipe)()) {
       stdin.once("end", stop);
       stdin.once("close", stop);
       stdin.resume();
