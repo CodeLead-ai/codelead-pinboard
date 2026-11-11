@@ -1,6 +1,6 @@
 /*
  * Pinboard. The CodeLead-AI palette: navy ink on a cool paper ground (light), the run report's
- * navy ground (dark), the blue to cyan of the mark spent on one thing only: what is new since you
+ * navy ground (dark), the blue to cyan of the mark highlights CodeLead cards and what is new since you
  * last looked (the capsule, the dot on a card and its "@you", the dot of a notification line). Everything else is
  * ink, lines and quiet fills. Bricolage Grotesque for headings, IBM Plex Sans for reading, IBM Plex
  * Mono for ids, counts, paths and times; the fallbacks keep the page whole offline.
@@ -2843,4 +2843,16 @@ dialog.confirm p {
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* The same blue tag is visible in every workflow column and in its quick filter. */
+.chip.chip-codelead {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border: 1px solid currentColor;
+  font-weight: 600;
+}
+.codelead-filter {
+  min-height: 30px;
+  white-space: nowrap;
 }

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type 
 import type { ParticipantInfo } from "../../server/contract.js";
 import { CloseIcon, EditIcon, PlusIcon } from "./icons.js";
 import { useMentionPicker } from "./Mentions.js";
-import { classes } from "./model.js";
+import { classes, FOR_CODELEAD_TAG } from "./model.js";
 
 /**
  * Editing a card is per field (spec 6.2), never a form that replaces the whole card. Each editor
@@ -440,6 +440,17 @@ export function TagEditor({ tags, known, updated, onAdd, onRemove }: { tags: str
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const forCodeLead = tags.includes(FOR_CODELEAD_TAG);
+  const toggleCodeLead = async (): Promise<void> => {
+    if (sending) return;
+    setSending(true);
+    try {
+      setError(await (forCodeLead ? onRemove : onAdd)(FOR_CODELEAD_TAG, updated));
+    } finally {
+      setSending(false);
+    }
+  };
   const add = async (): Promise<void> => {
     const tag = draft.trim();
     if (tag === "") return;
@@ -452,9 +463,12 @@ export function TagEditor({ tags, known, updated, onAdd, onRemove }: { tags: str
   };
   return (
     <div className="tag-editor">
+      <button type="button" className="secondary small" disabled={sending} onClick={() => void toggleCodeLead()} title={forCodeLead ? "Remove for:codelead; keep the card in this column" : "Add for:codelead; keep the card in this column"}>
+        {forCodeLead ? "Take back from CodeLead" : "Send to CodeLead"}
+      </button>
       {tags.map((tag) => (
-        <span key={tag} className={classes("chip", tag.startsWith("repo:") && "chip-repo-plain", tag.startsWith("by:") && "chip-by")}>
-          {tag}
+        <span key={tag} className={classes("chip", tag.startsWith("repo:") && "chip-repo-plain", tag.startsWith("by:") && "chip-by", tag === FOR_CODELEAD_TAG && "chip-codelead")}>
+          {tag === FOR_CODELEAD_TAG ? "CodeLead" : tag}
           <button type="button" className="chip-x" aria-label={`Remove the tag ${tag}`} title={`Remove ${tag}`} onClick={async () => setError(await onRemove(tag, updated))}>
             <CloseIcon size={10} />
           </button>
