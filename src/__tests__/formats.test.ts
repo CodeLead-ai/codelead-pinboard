@@ -391,16 +391,37 @@ describe("the front matter's YAML", () => {
 });
 
 describe("AGENTS.md for a board CodeLead joined", () => {
-  it("gains the CodeLead section only when the board has the queue column", () => {
-    const plain = defaultBoardConfig({ name: "plain", participants: [{ id: "robin", kind: "person", name: "Robin" }] });
+  const plain = defaultBoardConfig({ name: "plain", participants: [{ id: "person", kind: "person", name: "Person" }] });
+
+  it("leaves an ordinary board without a CodeLead section", () => {
     expect(agentsGuide(plain)).not.toContain("## CodeLead on the board");
+  });
+
+  it.each([false, true])("describes the tag queue when CodeLead is a participant (legacy column: %s)", (legacy) => {
     const columns = [...plain.columns];
-    columns.splice(columns.findIndex((column) => column.id === "in-progress"), 0, { id: "queued", name: "Queued for CodeLead" });
+    if (legacy) columns.push({ id: "queued", name: "Queued for CodeLead" });
     const joined = { ...plain, columns, participants: [...plain.participants, { id: "codelead", kind: "agent" as const, name: "CodeLead" }] };
     const guide = agentsGuide(joined);
+    const words = guide.replace(/\n  /g, " ");
     expect(guide).toContain("## CodeLead on the board");
-    expect(guide).toContain('The queue is the column "Queued for CodeLead"');
-    expect(guide.replace(/\n  /g, " ")).toContain("never moves a card into Pinned or Done");
+    expect(words).toContain('The queue is the tag `for:codelead`');
+    expect(words).toContain('top of Backlog first');
+    expect(words).toContain('not archived and not in In progress, For review or Done');
+    expect(words).toContain('other columns in board order, each in page order');
+    expect(words).toContain('keeps the tag');
+    expect(words).toContain('move it back to Backlog, tagged `for:codelead`');
+    expect(words).toContain('Agents do not add or remove the tag');
+    expect(words).toContain('never moves a card into Pinned or Done');
+    expect(words).not.toContain('The queue is the column');
+    expect(words).not.toContain('drag it back');
+    expect(words.includes('untagged cards after the tagged cards')).toBe(legacy);
     expect(guide.endsWith("\n")).toBe(true);
+  });
+
+  it("retains tag guidance for an old queue column even without the participant", () => {
+    const guide = agentsGuide({ ...plain, columns: [...plain.columns, { id: "queued", name: "Old queue" }] }).replace(/\n  /g, " ");
+    expect(guide).toContain('The queue is the tag `for:codelead`');
+    expect(guide).toContain('The old column "Old queue" is kept for a while');
+    expect(guide).toContain('untagged cards after the tagged cards');
   });
 });
