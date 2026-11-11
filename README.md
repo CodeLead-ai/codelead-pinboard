@@ -65,6 +65,9 @@ practice three parties touch it, each in its own way:
 - **The command line** stays for whoever prefers it, and for the few things the page does not
   do (several cards from a file, an import, `validate`).
 
+Choose **Send to CodeLead** on a card to add `for:codelead` without moving it; **Take back from CodeLead** removes the tag.
+The blue **CodeLead** badge follows the card through its columns, and the **For CodeLead** filter finds tagged cards across the board.
+
 Everything below was run as written, on an empty repository called `my-app`, with one person
 (`robin`) and one agent (`claude`). The outputs are the commands' own.
 

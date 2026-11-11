@@ -1,5 +1,7 @@
 import type { BoardPayload, CardId, CardSummary, ColumnInfo } from "../../server/contract.js";
 
+export const FOR_CODELEAD_TAG = "for:codelead";
+
 /**
  * The board as the page reads it: the filter (kept in the URL's query, so a browser tab can stay on
  * "what waits on me in the rebuild"), which cards match it, the order of a column, and the words.

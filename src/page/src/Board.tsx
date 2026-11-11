@@ -12,6 +12,7 @@ import {
   columnCards,
   columnLabel,
   EMPTY_WORDS,
+  FOR_CODELEAD_TAG,
   hueOf,
   isFiltering,
   keyOf,
@@ -225,6 +226,7 @@ interface TileProps {
 }
 
 function Tag({ tag }: { tag: string }) {
+  if (tag === FOR_CODELEAD_TAG) return <span className="chip chip-codelead" title={FOR_CODELEAD_TAG}>CodeLead</span>;
   if (tag.startsWith("repo:")) {
     return (
       <span className={`chip chip-repo hue-${hueOf(tag.slice(5))}`} title={`repository ${tag.slice(5)}`}>

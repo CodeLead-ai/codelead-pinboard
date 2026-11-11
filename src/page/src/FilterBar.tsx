@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { BoardPayload } from "../../server/contract.js";
 import { ChevronDown, CloseIcon, SearchIcon } from "./icons.js";
-import { classes, EMPTY_FILTER, isFiltering, repositoriesOf, tagGroups, type Filter } from "./model.js";
+import { classes, EMPTY_FILTER, FOR_CODELEAD_TAG, isFiltering, repositoriesOf, tagGroups, type Filter } from "./model.js";
 
 export interface FilterBarProps {
   board: BoardPayload;
@@ -49,6 +49,15 @@ export function FilterBar({ board, filter, onChange, matching, total, searchRef 
 
       <Select label="Column" value={filter.column} onChange={(column) => set({ column })} options={board.columns.map((column) => [column.id, column.name])} anyWords="Any column" testId="filter-column" />
       <Select label="Type" value={filter.type} onChange={(type) => set({ type })} options={board.types.map((type) => [type, type])} anyWords="Any type" testId="filter-type" />
+      <button
+        type="button"
+        className={classes("chip", "codelead-filter", filter.tags.includes(FOR_CODELEAD_TAG) && "chip-codelead")}
+        aria-pressed={filter.tags.includes(FOR_CODELEAD_TAG)}
+        title="Filter cards tagged for:codelead in any column"
+        onClick={() => set({ tags: filter.tags.includes(FOR_CODELEAD_TAG) ? filter.tags.filter((tag) => tag !== FOR_CODELEAD_TAG) : [...filter.tags, FOR_CODELEAD_TAG] })}
+      >
+        For CodeLead
+      </button>
       <TagPicker groups={groups} chosen={filter.tags} onChange={(tags) => set({ tags })} />
       {repositories.length > 0 ? (
         <Select label="Repository" value={filter.repo} onChange={(repo) => set({ repo })} options={repositories.map((name) => [name, name])} anyWords="Any repository" testId="filter-repo" />
