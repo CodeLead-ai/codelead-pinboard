@@ -11,11 +11,14 @@ import { makeDemoBoard } from "./demoBoard.js";
 /**
  * The ten themes, the projects, the board's background and the bulk bar, in a real browser on the
  * demo board (demoBoard.ts): every theme draws the board and an open card with its own tokens only and
- * the same font sizes; the two high-contrast themes keep text at 7:1 and control edges at 3:1; a
- * picked background keeps the columns' titles readable; cards are picked and moved together, with an
- * Undo; the project selector narrows the board and carries its own theme.
+ * the same font sizes; the eight colour themes each have an accent hue and a ground of their own; every
+ * theme keeps text at 4.5:1 and the edges of inputs and buttons at 3:1, the two high-contrast ones text
+ * at 7:1; on a picked background each column stays one surface, its title readable, its edge apart
+ * from the colour; cards are picked and moved together, with an Undo; the project selector narrows the
+ * board and carries its own theme.
  *
- * With PINBOARD_THEME_SCREENSHOTS=<folder>, it also saves the screenshots of docs/screenshots/themes.
+ * With PINBOARD_THEME_SCREENSHOTS=<folder>, it also saves the screenshots of docs/screenshots/themes,
+ * the contact sheet of the eight colour themes (all-themes.png) among them.
  */
 const browser: Browser | undefined = await (async () => {
   try {
@@ -27,6 +30,34 @@ const browser: Browser | undefined = await (async () => {
 })();
 
 const SHOTS = process.env.PINBOARD_THEME_SCREENSHOTS;
+
+/** A colour in OKLCH: its lightness (0 to 1), chroma and hue (degrees), and its OKLab a and b. */
+interface Lch {
+  l: number;
+  c: number;
+  h: number;
+  a: number;
+  b: number;
+}
+
+/** OKLCH of a `#rrggbb` colour (Björn Ottosson's OKLab). */
+function lch(hex: string): Lch {
+  const linear = [1, 3, 5].map((at) => {
+    const value = parseInt(hex.slice(at, at + 2), 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  }) as [number, number, number];
+  const [r, g, b] = linear;
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  const lightness = 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
+  const a = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+  const bb = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+  return { l: lightness, c: Math.hypot(a, bb), h: ((Math.atan2(bb, a) * 180) / Math.PI + 360) % 360, a, b: bb };
+}
+
+const hueDistance = (first: number, second: number): number => Math.min(Math.abs(first - second), 360 - Math.abs(first - second));
+const distance = (first: Lch, second: Lch): number => Math.hypot(first.l - second.l, first.a - second.a, first.b - second.b);
 
 /**
  * The page's checks, defined in the page (this file is checked without the DOM's types): the colours
@@ -94,7 +125,10 @@ window.__checks = (() => {
   };
   const faded = (el) => { for (let e = el; e; e = e.parentElement) { if (parseFloat(getComputedStyle(e).opacity) < 1) return true; if (e.matches && e.matches(":disabled")) return true; } return false; };
 
-  /** Text under 'min' to its ground, and the edges of the controls 'edges' names under 'edge' to the ground around them. */
+  /**
+   * Text under 'min' to its ground, placeholders included, and the edges of the controls 'edges' names
+   * under 'edge' to the ground around them.
+   */
   const contrast = (scope, min, edge, edges = "button, input, select, textarea, .tile, .select, .search, .field-input") => {
     const low = [];
     const root = document.querySelector(scope) || document.body;
@@ -105,6 +139,11 @@ window.__checks = (() => {
         const fg = parse(getComputedStyle(el).color);
         const r = fg ? ratio(over(fg, behind(el)), behind(el)) : 0;
         if (r < min) low.push("text " + describe(el) + " " + r.toFixed(2) + ": " + el.textContent.trim().slice(0, 30));
+      }
+      if (el.matches("input[placeholder], textarea[placeholder]") && el.value === "") {
+        const fg = parse(getComputedStyle(el, "::placeholder").color);
+        const r = fg ? ratio(over(fg, behind(el)), behind(el)) : 0;
+        if (r < min) low.push("placeholder " + describe(el) + " " + r.toFixed(2) + ": " + el.placeholder.slice(0, 30));
       }
       if (el.matches(edges)) {
         const cs = getComputedStyle(el);
@@ -239,6 +278,52 @@ describe.skipIf(!browser)("themes, projects, the board's background and the bulk
     expect(await page.evaluate("document.fonts.check('14px \"Atkinson Hyperlegible Next\"') && document.fonts.check('14px \"IBM Plex Sans\"')")).toBe(true);
   }, 120_000);
 
+  it("gives each of the eight colour themes a character of its own: an accent hue far from the others of its lightness, its own ground, its columns and cards apart from it", async () => {
+    const colourThemes = THEMES.filter((theme) => theme.group !== "contrast");
+    const looks: Record<string, { ground: Lch; column: Lch; card: Lch; accent: Lch; columnLine: string; cardLine: string }> = {};
+    const cells: Array<{ caption: string; image: string }> = [];
+    for (const theme of colourThemes) {
+      await showTheme(theme.id);
+      const tokens = (await page.evaluate(
+        "['--ground', '--well-solid', '--surface', '--accent-ink', '--well-line', '--tile-line'].map((name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim())"
+      )) as string[];
+      const [ground, column, card, accent, columnLine, cardLine] = tokens as [string, string, string, string, string, string];
+      looks[theme.id] = { ground: lch(ground), column: lch(column), card: lch(card), accent: lch(accent), columnLine, cardLine };
+      // The same region of the board in each, for the contact sheet.
+      if (SHOTS) cells.push({ caption: `${theme.name}: ${theme.about}`, image: (await page.screenshot({ clip: { x: 0, y: 0, width: 1280, height: 700 } })).toString("base64") });
+    }
+    if (SHOTS) {
+      // The contact sheet: the eight side by side, the light ones above the dark ones.
+      const sheet = await context.newPage();
+      await sheet.setViewportSize({ width: 2128, height: 600 });
+      await sheet.setContent(
+        `<!doctype html><html><body style="margin:0;padding:16px;background:#c9ced6;color:#0b1630;font:600 17px/1.3 system-ui,sans-serif"><div style="display:grid;grid-template-columns:repeat(4,512px);gap:20px 16px">${cells
+          .map((cell) => `<figure style="margin:0"><img src="data:image/png;base64,${cell.image}" style="display:block;width:512px;height:280px;border-radius:6px;box-shadow:0 0 0 1px rgba(0,0,0,.3)"><figcaption style="padding:7px 2px 0">${cell.caption}</figcaption></figure>`)
+          .join("")}</div></body></html>`
+      );
+      await sheet.screenshot({ path: path.join(SHOTS, "all-themes.png"), fullPage: true });
+      await sheet.close();
+    }
+    for (const mode of ["light", "dark"] as const) {
+      const ids = colourThemes.filter((theme) => theme.mode === mode).map((theme) => theme.id);
+      for (const [index, first] of ids.entries()) {
+        for (const second of ids.slice(index + 1)) {
+          // An accent of its own: 30 degrees of hue or more from every other theme of the same lightness.
+          expect(hueDistance(looks[first]!.accent.h, looks[second]!.accent.h), `${first} and ${second}: their accents`).toBeGreaterThanOrEqual(30);
+          // A ground of its own.
+          expect(distance(looks[first]!.ground, looks[second]!.ground), `${first} and ${second}: their grounds`).toBeGreaterThanOrEqual(0.025);
+        }
+      }
+    }
+    for (const theme of colourThemes) {
+      const look = looks[theme.id]!;
+      // The ladder: a card stands off its column by its fill or its line, and a column off the ground (or it has a line of its own).
+      const cardEdge = Math.max(Math.abs(look.card.l - look.column.l), look.cardLine.startsWith("#") ? Math.abs(lch(look.cardLine).l - look.column.l) : 0);
+      expect(cardEdge, `${theme.id}: a card on its column`).toBeGreaterThanOrEqual(0.03);
+      if (look.columnLine === "transparent") expect(Math.abs(look.column.l - look.ground.l), `${theme.id}: a column on the ground`).toBeGreaterThanOrEqual(0.025);
+    }
+  }, 60_000);
+
   it("keeps the high-contrast themes at 7:1 for text and 3:1 for control edges and the focus ring, the board and the open card", async () => {
     for (const id of ["contrast-light", "contrast-dark"]) {
       await showTheme(id);
@@ -263,6 +348,48 @@ describe.skipIf(!browser)("themes, projects, the board's background and the bulk
     }
   }, 60_000);
 
+  it("keeps the text of every theme at 4.5:1 on its ground, placeholders included, and the edges of its inputs and buttons at 3:1: the board, an open card, an editor, a new card, the menus", async () => {
+    const controls = JSON.stringify("button, input, select, textarea, .select, .search, .field-input");
+    const check = (scope: string): Promise<string[]> => evaluate<string[]>(`window.__checks.contrast(${JSON.stringify(scope)}, 4.5, 3, ${controls})`);
+    const found: string[] = [];
+    const note = (where: string, low: string[]): void => {
+      for (const line of low) found.push(`${where}: ${line}`);
+    };
+    for (const theme of THEMES) {
+      await showTheme(theme.id);
+      note(`${theme.id} board`, await check(".app"));
+      // A card open, then its description in the editor with the preview beside it.
+      await tile(7).click();
+      const panel = page.getByTestId("panel");
+      await panel.locator(".panel-title").waitFor();
+      note(`${theme.id} open card`, await check("[data-testid=panel]"));
+      await panel.getByRole("button", { name: "Edit the description" }).click();
+      await panel.getByTestId("preview-split").click();
+      await panel.getByTestId("preview-pane").waitFor();
+      note(`${theme.id} editor`, await check("[data-testid=panel]"));
+      await panel.getByRole("button", { name: "Cancel" }).click();
+      await page.keyboard.press("Escape");
+      await expect.poll(() => page.getByTestId("panel").count()).toBe(0);
+      // A new card's form: its placeholders.
+      await page.locator("[data-column='inbox']").hover();
+      await page.getByRole("button", { name: "New card in Inbox" }).click();
+      await page.getByTestId("composer").waitFor();
+      note(`${theme.id} new card`, await check("[data-testid=composer]"));
+      await page.getByTestId("composer").getByRole("button", { name: "Cancel" }).click();
+      await expect.poll(() => page.getByTestId("composer").count()).toBe(0);
+      // The theme menu and the notification list.
+      await page.getByTestId("theme").click();
+      note(`${theme.id} theme menu`, await check("[data-testid=theme-menu]"));
+      await page.keyboard.press("Escape");
+      await page.getByTestId("capsule").click();
+      await page.getByTestId("notifications").waitFor();
+      note(`${theme.id} notifications`, await check("[data-testid=notifications]"));
+      await page.getByTestId("capsule").click();
+      await expect.poll(() => page.getByTestId("notifications").count()).toBe(0);
+    }
+    expect(found).toEqual([]);
+  }, 120_000);
+
   it("keeps every theme's top bar, filter bar and cards inside the window at 1280 and at 800 px", async () => {
     for (const width of [1280, 800]) {
       await page.setViewportSize({ width, height: 800 });
@@ -285,13 +412,14 @@ describe.skipIf(!browser)("themes, projects, the board's background and the bulk
       id: string;
       fill: string;
       behindTitle: string;
+      titleOnHead: number;
       headInside: boolean;
       title: number;
       edge: number;
     }
     const columns = (): Promise<Column[]> =>
       evaluate<Column[]>(
-        "[...document.querySelectorAll('.column')].map((column) => { const head = column.querySelector('.column-head, .column-strip'); const title = column.querySelector('.column-title h2, .strip-name'); const c = column.getBoundingClientRect(), h = head.getBoundingClientRect(); const fill = getComputedStyle(column).backgroundColor; const b = window.__checks.behind(title); return { id: column.dataset.column, fill, behindTitle: 'rgb(' + [b.r, b.g, b.b].map(Math.round).join(', ') + ')', headInside: h.left >= c.left && h.right <= c.right && h.top >= c.top && h.bottom <= c.bottom, title: window.__checks.ratioOf(getComputedStyle(title).color, fill), edge: window.__checks.edge(column) }; })"
+        "[...document.querySelectorAll('.column')].map((column) => { const head = column.querySelector('.column-head, .column-strip'); const title = column.querySelector('.column-title h2, .strip-name'); const c = column.getBoundingClientRect(), h = head.getBoundingClientRect(); const fill = getComputedStyle(column).backgroundColor; const b = window.__checks.behind(title); return { id: column.dataset.column, fill, behindTitle: 'rgb(' + [b.r, b.g, b.b].map(Math.round).join(', ') + ')', headInside: h.left >= c.left && h.right <= c.right && h.top >= c.top && h.bottom <= c.bottom, title: window.__checks.ratioOf(getComputedStyle(title).color, fill), titleOnHead: window.__checks.ratioOf(getComputedStyle(title).color, 'rgb(' + [b.r, b.g, b.b].join(', ') + ')'), edge: window.__checks.edge(column) }; })"
       );
     for (const theme of THEMES) {
       await showTheme(theme.id);
@@ -307,7 +435,9 @@ describe.skipIf(!browser)("themes, projects, the board's background and the bulk
         for (const column of shown) {
           expect(column.fill, `${where}: ${column.id}'s surface`).toBe(rgb(surface));
           if (background !== surface) expect(column.fill, `${where}: ${column.id}`).not.toBe(rgb(background));
-          expect(column.behindTitle, `${where}: behind ${column.id}'s title`).toBe(rgb(surface));
+          // Behind the title: the column's header (the theme's tint, where it has one) on that surface, never the colour.
+          if (background !== surface) expect(column.behindTitle, `${where}: behind ${column.id}'s title`).not.toBe(rgb(background));
+          expect(column.titleOnHead, `${where}: ${column.id}'s title on its header`).toBeGreaterThanOrEqual(4.5);
           expect(column.headInside, `${where}: ${column.id}'s header`).toBe(true);
           expect(column.title, `${where}: ${column.id}'s title`).toBeGreaterThanOrEqual(4.5);
           expect(column.edge, `${where}: ${column.id}'s edge`).toBeGreaterThanOrEqual(3);

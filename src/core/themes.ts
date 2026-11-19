@@ -15,20 +15,20 @@ export interface ThemeInfo {
   group: ThemeGroup;
   /** The face the theme reads in, as the menu and the README name it. */
   font: string;
-  /** What sets it apart, in a few words. */
+  /** What sets it apart, in a few words: its ground, its accent. */
   about: string;
 }
 
 /** The ten themes, in the menu's order: four light, four dark, two high contrast. */
 export const THEMES: readonly ThemeInfo[] = [
-  { id: "paper", name: "Paper", mode: "light", group: "light", font: "IBM Plex Sans", about: "cool paper, navy ink: the first theme" },
-  { id: "linen", name: "Linen", mode: "light", group: "light", font: "Charter", about: "warm cream, brown ink, a serif" },
-  { id: "frost", name: "Frost", mode: "light", group: "light", font: "Trebuchet MS", about: "cool blue-grey, teal accents" },
-  { id: "sage", name: "Sage", mode: "light", group: "light", font: "Verdana", about: "soft grey-green, low glare, a wide face" },
-  { id: "navy", name: "Navy", mode: "dark", group: "dark", font: "IBM Plex Sans", about: "the run report's navy: the first dark theme" },
-  { id: "pitch", name: "Pitch", mode: "dark", group: "dark", font: "Tahoma", about: "true black" },
-  { id: "dusk", name: "Dusk", mode: "dark", group: "dark", font: "Seravek", about: "dim blue-grey" },
-  { id: "ember", name: "Ember", mode: "dark", group: "dark", font: "Iowan Old Style", about: "warm dark brown, a serif" },
+  { id: "paper", name: "Paper", mode: "light", group: "light", font: "IBM Plex Sans", about: "cool paper, navy ink, a blue accent: the first theme" },
+  { id: "linen", name: "Linen", mode: "light", group: "light", font: "Charter", about: "warm sand, brown ink, terracotta, a serif" },
+  { id: "frost", name: "Frost", mode: "light", group: "light", font: "Trebuchet MS", about: "bright icy cyan, white cards, teal" },
+  { id: "sage", name: "Sage", mode: "light", group: "light", font: "Verdana", about: "dim grey-green, low glare, forest green" },
+  { id: "navy", name: "Navy", mode: "dark", group: "dark", font: "IBM Plex Sans", about: "the run report's navy, a blue accent: the first dark theme" },
+  { id: "pitch", name: "Pitch", mode: "dark", group: "dark", font: "Tahoma", about: "true black, flat, fuchsia" },
+  { id: "dusk", name: "Dusk", mode: "dark", group: "dark", font: "Seravek", about: "mid slate, lighter cards, periwinkle" },
+  { id: "ember", name: "Ember", mode: "dark", group: "dark", font: "Iowan Old Style", about: "warm brown-black, orange-red, a serif" },
   { id: "contrast-light", name: "High contrast light", mode: "light", group: "contrast", font: "Atkinson Hyperlegible Next", about: "black on white, 7:1 text" },
   { id: "contrast-dark", name: "High contrast dark", mode: "dark", group: "contrast", font: "Atkinson Hyperlegible Next", about: "white on black, 7:1 text" }
 ];

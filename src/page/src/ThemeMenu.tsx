@@ -25,7 +25,7 @@ const GROUPS: Array<[ThemeGroup, string]> = [
   ["contrast", "High contrast"]
 ];
 
-/** A theme in small: its ground, a card of its surface with two lines of its ink, a dot of its accent. Drawn in the theme's own tokens. */
+/** A theme in small: its ground, a card of its surface with a line of its ink and a line of its accent, a dot of its accent. Drawn in the theme's own tokens. */
 function Swatch({ theme }: { theme: string }) {
   return (
     <span className="theme-swatch" data-theme-scope={theme} aria-hidden="true">

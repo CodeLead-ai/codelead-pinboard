@@ -259,8 +259,11 @@ step 2 and `AGENTS.md` tell it to; you see the result on the page.
 - two **high contrast** ones, light and dark: text at 7:1 or more;
 - **System**: it follows your computer, between the light and the dark theme you picked last.
 
-Each theme reads in its own font. The text is the same size in all of them. The fonts come with
-the package: the page needs no network.
+Each theme has an accent of its own: Paper blue, Linen terracotta, Frost teal, Sage forest green,
+Navy blue, Pitch fuchsia, Dusk periwinkle, Ember orange-red.
+
+Each theme reads in its own font. The text is the same size in all of them, and reads at 4.5:1 or
+more on its ground. The fonts come with the package: the page needs no network.
 
 **Board background.** In the same menu: the theme's own, one of twelve colours that suit the
 theme, or any colour. Your colour is the backdrop only: each column keeps the theme's look, one
@@ -272,12 +275,12 @@ around each column keeps it apart by itself.
 choices live in the board folder, in `.local/preferences.json` (git ignores `.local/`), so the
 page shows the same in a browser and in an editor's tab.
 
-![Linen: warm cream, brown ink and a serif, with a card open.](docs/screenshots/themes/linen.png)
+![Linen: warm sand, brown ink, a terracotta accent and a serif, with a card open.](docs/screenshots/themes/linen.png)
 
 ![High contrast dark: white on black, every edge visible.](docs/screenshots/themes/contrast-dark.png)
 
-*The ten themes, the theme menu and a picked background are in
-[`docs/screenshots/themes`](docs/screenshots/themes).*
+*The ten themes, the eight colour themes side by side (`all-themes.png`), the theme menu and a
+picked background are in [`docs/screenshots/themes`](docs/screenshots/themes).*
 
 **Several cards at once.**
 
