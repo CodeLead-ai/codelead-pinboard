@@ -241,6 +241,60 @@ step 2 and `AGENTS.md` tell it to; you see the result on the page.
   Names the board must never hold go in `docs/codelead/board/private-names.txt`, one a line,
   on each machine (git ignores it).
 
+### Projects, themes and bulk operations
+
+**Projects.** A project is a tag on a card: `repo:<name>`, as `repo:api`.
+
+- The selector at the left of the top bar lists every project on the board, with how many of
+  its cards are still open (not done, not archived).
+- Pick one and the whole board shows only its cards: the columns, the counts, the search.
+  **No project** shows the cards without a `repo:` tag.
+- The address keeps it (`?project=api`), so a bookmark opens on the project.
+- A card you write while a project is picked gets its tag. You can take the tag off in the form.
+
+**Themes.** The palette button in the top bar opens the theme menu:
+
+- four light themes: **Paper**, **Linen**, **Frost**, **Sage**;
+- four dark ones: **Navy**, **Pitch**, **Dusk**, **Ember**;
+- two **high contrast** ones, light and dark: text at 7:1 or more;
+- **System**: it follows your computer, between the light and the dark theme you picked last.
+
+Each theme reads in its own font. The text is the same size in all of them. The fonts come with
+the package: the page needs no network.
+
+**Board background.** In the same menu: the theme's own, one of twelve colours that suit the
+theme, or any colour. The cards and columns keep the theme's look. When a column's title would be
+hard to read on your colour, it switches to a lighter or darker text by itself.
+
+**Kept per project.** Pick Ember while `api` is shown, and `api` opens in Ember next time.
+**All projects** keeps the default; **Use the default** forgets a project's own choice. The
+choices live in the board folder, in `.local/preferences.json` (git ignores `.local/`), so the
+page shows the same in a browser and in an editor's tab.
+
+![Linen: warm cream, brown ink and a serif, with a card open.](docs/screenshots/themes/linen.png)
+
+![High contrast dark: white on black, every edge visible.](docs/screenshots/themes/contrast-dark.png)
+
+*The ten themes, the theme menu and a picked background are in
+[`docs/screenshots/themes`](docs/screenshots/themes).*
+
+**Several cards at once.**
+
+- **Pick** cards: ⌘-click a card (Ctrl-click on Windows and Linux); Shift-click picks every card
+  between it and the last one you picked in that column; `x` picks the card the keyboard is on;
+  a column's ⋯ menu has **Select all in this column**. A ticked box shows what is picked. Esc
+  clears.
+- **The bar** at the bottom says how many are picked: **Move to…**, **Archive**, **Add tag…**,
+  **Remove tag…**, **Set project…** (an existing project or a new name; tick "replace" to take
+  off their other project), **Clear**.
+- Each asks once, then says what happened, card by card: "6 archived, 1 refused: #42 changed
+  since you read it". **Undo** puts it back.
+- **Drag** one picked card and the others come with it, in their order.
+- The commands do the same: `pinboard move 3 4 7 --to done --as robin`,
+  `pinboard archive 3 4 --as robin` (and `unarchive`), `pinboard set 3 4 --tag area:auth --as robin`.
+
+![Three cards picked: each shows a ticked box; the bar at the bottom offers Move to, Archive, Add tag, Remove tag, Set project and Clear.](docs/screenshots/themes/bulk-bar.png)
+
 ### Every day after
 
 ![The page with "Since you last looked" open: twelve changes on five cards, each with who did what and when.](docs/screenshots/whats-new.png)
@@ -347,7 +401,8 @@ A board is a folder, `docs/codelead/board` in the repository by default:
 | `events.jsonl` | One JSON object a line, appended, never edited. |
 | `cursors/<participant>.json` | What a participant has seen. Per machine; git ignores it. |
 | `imports/` | Optional: the printed mapping of an import, kept for the record. The import itself marks each document it read in `board.json` (`imports`), so that it runs once. |
-| `.gitignore` | Keeps `cursors/`, the lock, `private-names.txt` and temporary files out of git. |
+| `.gitignore` | Keeps `cursors/`, the lock, `private-names.txt`, `.local/` and temporary files out of git. |
+| `.local/preferences.json` | Optional. This machine's view choices: the theme and the board's background, by default and per project, and the project shown last (`pinboard.preferences/1`). Written by the page; git ignores it. |
 | `private-names.txt` | Optional. Names the board must never hold, one a line. Git ignores it. |
 
 ### `board.json`
@@ -432,8 +487,9 @@ Fine. After packages 4 and 5.
 {"at":"2026-10-03T00:52:10Z","by":"robin","item":42,"kind":"item.moved","data":{"from":"inbox","to":"backlog"}}
 ```
 
-Kinds: `item.created`, `item.updated`, `item.moved`, `item.archived`, `comment.added`,
-`relation.added`, `relation.removed`, `tag.added`, `tag.removed`, `attachment.added`.
+Kinds: `item.created`, `item.updated`, `item.moved`, `item.archived`, `item.unarchived`,
+`comment.added`, `relation.added`, `relation.removed`, `tag.added`, `tag.removed`,
+`attachment.added`.
 
 The card is the truth; the line is what a check reports. A card file that changed with no event
 (a hand edit, an agent that forgot) gets an event by `unknown` at the next check, or from the
@@ -473,8 +529,10 @@ gives the same commands under its own name (`codelead board …`).
 | `show <id>` | One card: fields, relations both ways, attachments, description, thread. |
 | `new --as <you>` | Creates a card (`--type`, `--title`, `--body`, `--field`, …), or every card of a markdown file (`--batch`), all or none. `--dry-run` writes nothing. |
 | `reply <id> --as <you>` | Appends a comment (`--text` or `--file`). |
-| `move <id> --to <column> --as <you>` | Moves a card; an agent only into `agents.mayMoveTo`. |
-| `set <id> --as <you>` | Changes tags, relations, the status line, the colour, the fields. |
+| `move <id…> --to <column> --as <you>` | Moves a card, or several (they keep their order); an agent only into `agents.mayMoveTo`. |
+| `set <id…> --as <you>` | Changes tags, relations, the status line, the colour, the fields of a card, or the same on several. |
+| `archive <id…> --as <person>` | Archives cards: they leave the board and stay in their files. A person only. |
+| `unarchive <id…> --as <person>` | Brings archived cards back to their columns. A person only. |
 | `validate` | Checks every file of the board. |
 | `import --from <folder>` | Turns `PINNED.md`, `DECISIONS-PENDING.md` and the plan's status table into cards, once. |
 | `tidy --imported` | After the import: strips the bold repetition of the title from imported cards. |
@@ -555,8 +613,14 @@ The page's sources are in `src/page` (React, Vite). The package ships its build 
 - `npx vite src/page` serves the sources for work on the page, with the API proxied to a
   `serve` on port 7414.
 
-The page loads nothing from elsewhere but its fonts (Google Fonts). Its Content-Security-Policy
-allows its own scripts only.
+The page loads nothing from elsewhere: its fonts are bundled (`src/page/public/fonts`, each under
+the SIL Open Font Licence with its text beside it). Its Content-Security-Policy allows its own
+scripts only.
+
+Besides the board and its cards, the page's process answers `GET` and `PUT /api/preferences`
+(the view choices, checked like a card's text: no secret, no path of this machine) and
+`POST /api/cards/batch` (one operation on several cards, `{ operation, ids, … , expectUpdated }`,
+each card written on its own and answered on its own).
 
 ## Working on the package
 

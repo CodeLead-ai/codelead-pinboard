@@ -46,7 +46,7 @@ window.__checks = (() => {
   const lum = (c) => 0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b);
   const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
   const describe = (el) => el.tagName.toLowerCase() + (el.className && typeof el.className === "string" ? "." + el.className.trim().split(/\s+/).join(".") : "") + (el.dataset && el.dataset.card ? "[" + el.dataset.card + "]" : "");
-  const skipped = (el) => !!el.closest("[data-theme-scope], .tile-color, .swatch, .background-swatch, .brand svg, option");
+  const skipped = (el) => !!el.closest("[data-theme-scope], .tile-color, .swatch, .background-swatch, .brand > svg, option");
   const visible = (el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden";
 
   /** Every colour a custom property on :root gives in this theme. */
@@ -209,8 +209,20 @@ describe.skipIf(!browser)("themes, projects, the board's background and the bulk
         )
       );
       await shot(`${theme.id}`);
+      // An editor with its markdown preview beside it, and the notification list.
+      const panel = page.getByTestId("panel");
+      await panel.getByRole("button", { name: "Edit the description" }).click();
+      await panel.getByTestId("preview-split").click();
+      await panel.getByTestId("preview-pane").waitFor();
+      expect(await evaluate<string[]>("window.__checks.outsideTokens()"), `${theme.id}: an editor`).toEqual([]);
+      await panel.getByRole("button", { name: "Cancel" }).click();
       await page.keyboard.press("Escape");
       await expect.poll(() => page.getByTestId("panel").count()).toBe(0);
+      await page.getByTestId("capsule").click();
+      await page.getByTestId("notifications").waitFor();
+      expect(await evaluate<string[]>("window.__checks.outsideTokens()"), `${theme.id}: the notifications`).toEqual([]);
+      await page.getByTestId("capsule").click();
+      await expect.poll(() => page.getByTestId("notifications").count()).toBe(0);
     }
     // The same sizes and line heights in every theme: only the face changes.
     expect(new Set(sizes).size).toBe(1);
@@ -232,6 +244,14 @@ describe.skipIf(!browser)("themes, projects, the board's background and the bulk
       for (const value of focus) expect(value, `${id}: the focus ring`).toBeGreaterThanOrEqual(3);
       await page.keyboard.press("Escape");
       await expect.poll(() => page.getByTestId("panel").count()).toBe(0);
+      // The bulk bar and the project list.
+      await tile(2).click({ modifiers: ["ControlOrMeta"] });
+      await page.getByTestId("bulk-bar").waitFor();
+      expect(await evaluate<string[]>("window.__checks.contrast('[data-testid=bulk-bar]', 7, 3)"), `${id}: the bulk bar`).toEqual([]);
+      await page.keyboard.press("Escape");
+      await page.getByTestId("project").click();
+      expect(await evaluate<string[]>("window.__checks.contrast('[data-testid=project-list]', 7, 3)"), `${id}: the project list`).toEqual([]);
+      await page.keyboard.press("Escape");
     }
   }, 60_000);
 
@@ -244,7 +264,7 @@ describe.skipIf(!browser)("themes, projects, the board's background and the bulk
           "(() => { const out = []; for (const s of ['.topbar', '.filterbar', '.topbar-end', '.brand']) { const el = document.querySelector(s); if (el && el.scrollWidth > el.clientWidth + 1) out.push(s + ' ' + el.scrollWidth + '>' + el.clientWidth); } for (const el of document.querySelectorAll('.tile')) if (el.scrollWidth > el.clientWidth + 1) out.push('tile ' + el.dataset.card); if (document.documentElement.scrollWidth > window.innerWidth + 1) out.push('page'); return out; })()"
         );
         expect(overflow, `${theme.id} at ${width} px`).toEqual([]);
-        if (width === 800 && ["sage", "contrast-dark"].includes(theme.id)) await shot(`narrow-${theme.id}`);
+        if (width === 800 && ["sage", "contrast-dark"].includes(theme.id)) await shot(`${theme.id}-800`);
       }
     }
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -438,7 +458,9 @@ describe.skipIf(!browser)("themes, projects, the board's background and the bulk
     await page.getByTestId("composer").getByLabel("Title").fill("Log the slow requests");
     await page.getByTestId("composer").getByRole("button", { name: "Create card" }).click();
     await expect.poll(() => page.locator(".tile").count()).toBe(before + 1);
-    await page.keyboard.press("Escape");
+    // The new card opens; Esc (twice when the panel's first field has the focus) goes back to the board.
+    for (let tries = 0; tries < 3 && (await page.getByTestId("panel").count()) > 0; tries += 1) await page.keyboard.press("Escape");
+    expect(await page.getByTestId("panel").count()).toBe(0);
     // A theme picked here is the project's own.
     await page.getByTestId("theme").click();
     expect(await page.getByTestId("theme-for").textContent()).toBe("for api");

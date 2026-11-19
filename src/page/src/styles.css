@@ -1133,7 +1133,8 @@ kbd {
   min-width: 0;
 }
 
-.brand svg {
+/* The mark itself (not the icons of the project selector beside it). */
+.brand > svg {
   flex: none;
   border-radius: 50%;
   box-shadow: 0 0 0 1px var(--brand-ring);
