@@ -283,3 +283,74 @@ export interface NewCardInput {
   tags?: string[];
   relations?: Array<{ kind: string; to: CardId }>;
 }
+
+/** One theme's choices, by default or for one project (core/themes.ts): each optional in a project, which falls back to the default. */
+export interface ThemeChoicesInfo {
+  /** One of the ten themes' ids, or "system". */
+  theme?: string;
+  lightTheme?: string;
+  darkTheme?: string;
+  /** "theme" (the theme's own) or a colour, `#rrggbb`. */
+  background?: string;
+}
+
+/** The board's view preferences on this machine (`.local/preferences.json` in the board folder). */
+export interface PreferencesDocument {
+  schema: string;
+  default: { theme: string; lightTheme: string; darkTheme: string; background?: string };
+  projects: Record<string, ThemeChoicesInfo>;
+  /** "" for all projects, "(none)" for cards with no project, or a project's name. */
+  lastProject?: string;
+}
+
+/** GET and PUT /api/preferences answer this. */
+export interface PreferencesPayload {
+  preferences: PreferencesDocument;
+  /** False while there is no file yet (or one that cannot be used): these are the defaults. */
+  stored: boolean;
+  /** Why a file that is there could not be used. */
+  problems?: string[];
+}
+
+export type BatchOperationName = "move" | "archive" | "unarchive" | "tags" | "project";
+
+/** POST /api/cards/batch: one operation on several cards, each card's write its own, in order. */
+export interface BatchInput {
+  /** Who writes: the board's person when not given (the page is the person). */
+  as?: string;
+  operation: BatchOperationName;
+  ids: CardId[];
+  /** move: the column. */
+  to?: string;
+  /** move: where the first card goes (below that card, or the top: null); the others follow it in order. */
+  after?: CardId | null;
+  /** tags: the tags to add and to remove. */
+  add?: string[];
+  remove?: string[];
+  /** project: the project's name (its tag is repo:<name>). */
+  project?: string;
+  /** project: remove the cards' other project tags. */
+  replace?: boolean;
+  /** Per card id, the `updated` the page read: a card changed since is refused, the others are written. */
+  expectUpdated?: Record<string, string>;
+}
+
+export interface BatchCardResult {
+  id: CardId;
+  outcome: "changed" | "unchanged" | "refused";
+  /** The core's refusal of this card's write, and its reason, short ("changed since you read it"). */
+  refused?: { code: string; message: string; reason: string };
+  /** The card's tile as it is now (after a write that was not refused). */
+  summary?: CardSummary;
+  events?: EventItem[];
+  /** Where the card stood before the call: what an Undo puts back. */
+  before?: { column: string; above: CardId | null; tags: string[]; archived?: string; updated: string };
+}
+
+export interface BatchPayload {
+  operation: BatchOperationName;
+  results: BatchCardResult[];
+  changed: number;
+  unchanged: number;
+  refused: number;
+}

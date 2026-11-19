@@ -90,7 +90,7 @@ describe("codelead board, command by command, through each command's function", 
     expect(guide).toContain("The check every 30 minutes needs a timer you do not have by yourself");
     // ... and the landing recorded from the comment (card #276, 2026-11-04) its two.
     expect(guide.split("\n").length).toBeLessThanOrEqual(67);
-    expect(fs.readFileSync(path.join(term.dir, ".gitignore"), "utf8")).toBe("cursors/\n.board.lock\nprivate-names.txt\n.*.tmp\n");
+    expect(fs.readFileSync(path.join(term.dir, ".gitignore"), "utf8")).toBe("cursors/\n.board.lock\nprivate-names.txt\n.*.tmp\n.local/\n");
     expect(await runBoardInit({}, term.deps)).toBe(1);
     expect(term.said()).toBe(`A board is already at ${term.dir} (board.json is there); nothing was written.`);
   });
@@ -250,7 +250,7 @@ describe("codelead board, command by command, through each command's function", 
       expect(JSON.parse(String(said.mock.calls[0]![0])).columns[0].cards.map((card: { id: number }) => card.id)).toEqual([1]);
       await createBoardCommand().parseAsync(["move", "1", "--board", term.dir, "--to", "done", "--as", "claude"], { from: "user" });
       expect(process.exitCode).toBe(1);
-      expect(createBoardCommand().commands.map((command) => command.name())).toEqual(["init", "check", "list", "show", "new", "reply", "move", "set", "validate", "import", "tidy", "serve"]);
+      expect(createBoardCommand().commands.map((command) => command.name())).toEqual(["init", "check", "list", "show", "new", "reply", "move", "set", "archive", "unarchive", "validate", "import", "tidy", "serve"]);
     } finally {
       said.mockRestore();
       process.exitCode = exit;

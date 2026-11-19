@@ -48,6 +48,7 @@ export {
   readBoard,
   relationsOf,
   synthesizeEvents,
+  unarchiveCard,
   updateCard,
   validateBoard,
   type BoardContext,
@@ -66,6 +67,7 @@ export {
   type WriteResult
 } from "./board.js";
 export { BATCH_KEYS, createBatch, parseBatch, type BatchDefaults, type BatchOptions, type BatchResult } from "./batch.js";
+export { BULK_LIMIT, bulkWrite, PROJECT_PREFIX, projectNameRefusal, refusalReason, type BulkBefore, type BulkCardResult, type BulkInput, type BulkOperation } from "./bulk.js";
 export { appendCommentText, cardFileName, KNOWN_KEYS, normalizeBody, parseCardText, REQUIRED_KEYS, serializeCard, structureLines, THREAD_HEADING, updateCardText } from "./card.js";
 export { cursorPath, readCursor } from "./cursors.js";
 export { commentAndMove, describeCommentAndMove, describeDecision, describeEvent, eventLines } from "./describe.js";
@@ -79,6 +81,8 @@ export { cleanText, findUnsafe, PRIVATE_NAMES_FILE, readPrivateNames, refuseUnsa
 export { rewriteHomePaths, rewriteMachinePaths, type PathScope } from "./paths.js";
 export { BoardSanitizer, defaultSanitizer, type SanitizerFactory, type SanitizerPaths, type TextSanitizer } from "./sanitize.js";
 export { formatJson } from "./json.js";
+export { checkedPreferences, ensureLocalIgnored, LOCAL_FOLDER, PREFERENCES_FILE, PREFERENCES_MAX_BYTES, preferencesPath, readPreferences, writePreferences, type PreferencesRead } from "./preferences.js";
+export * from "./themes.js";
 export { digest, isIsoTime, isoSeconds, sha256, slugify, splitText } from "./text.js";
 export * from "./types.js";
 export { formatEntry, formatScalar, parseYamlMapping, sameValue, YamlError, type YamlMap, type YamlScalar, type YamlValue } from "./yaml.js";

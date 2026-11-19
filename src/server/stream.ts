@@ -179,6 +179,8 @@ export class BoardStream {
       // The lock file, and the temporary files of atomic writes: nothing the page shows.
       if (base === LOCK_FILE || (base.startsWith(".") && base.endsWith(".tmp"))) return;
       if (relative.startsWith("imports/")) return;
+      // This machine's view preferences: the process that writes them tells the pages itself.
+      if (relative === ".local" || relative.startsWith(".local/")) return;
     }
     if (this.debounce) clearTimeout(this.debounce);
     this.debounce = setTimeout(() => this.scan(), this.options.debounceMs);
@@ -224,6 +226,11 @@ export class BoardStream {
 
   private message(res: ServerResponse, kind: string, data: unknown, id?: number): void {
     this.send(res, `${id !== undefined ? `id: ${id}\n` : ""}event: ${kind}\ndata: ${JSON.stringify(data)}\n\n`);
+  }
+
+  /** Tells every page something that is not a line of the log nor a card (the view preferences changed). */
+  public tell(kind: string, data: unknown): void {
+    this.broadcast(kind, data);
   }
 
   private broadcast(kind: string, data: unknown, id?: number): void {

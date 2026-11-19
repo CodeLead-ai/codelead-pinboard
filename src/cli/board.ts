@@ -4,7 +4,9 @@ import path from "node:path";
 import { Command } from "commander";
 import {
   addComment,
+  archiveCard,
   boardContext,
+  bulkWrite,
   DEFAULT_CHECK_MINUTES,
   boardLocation,
   checkBoard,
@@ -28,13 +30,17 @@ import {
   parseCardId,
   readBoard,
   readBoardConfig,
+  refusalReason,
   relationsOf,
   TYPE_FIELDS,
+  unarchiveCard,
   updateCard,
   validateBoard,
   type BoardConfig,
   type BoardContext,
   type BoardEvent,
+  type BulkCardResult,
+  type BulkOperation,
   type Card,
   type CardChanges,
   type CardId,
@@ -148,6 +154,10 @@ export interface BoardSetOptions extends Common, PathOptions {
   field?: string[];
   /** A field to remove (one the card keeps from another type, too). */
   unsetField?: string[];
+  ifUpdated?: string;
+}
+export interface BoardArchiveOptions extends Common {
+  as?: string;
   ifUpdated?: string;
 }
 export interface BoardTidyOptions extends Common {
@@ -361,6 +371,49 @@ function writeSummary(result: WriteResult, json: boolean | undefined, words: str
 /** The core's option for --rewrite-paths: nothing to add when it was not given. */
 function homePaths(options: PathOptions): { rewriteHomePaths?: true } {
   return options.rewritePaths ? { rewriteHomePaths: true } : {};
+}
+
+/** The ids a command was given: one (`move 3`) or several (`move 3 4 7`), each a card id. */
+function idsOf(given: string | string[]): CardId[] {
+  const list = Array.isArray(given) ? given : [given];
+  if (list.length === 0) throw new UsageError("Name a card: its id (42 or #42), or several ids.");
+  return list.map(cardIdOf);
+}
+
+/** --if-updated names one card's `updated`: it goes with one id only. */
+function oneCardOnly(ids: CardId[], options: { ifUpdated?: string }): void {
+  if (ids.length > 1 && options.ifUpdated) throw new UsageError("--if-updated names one card's updated time; give it with one id, not several.");
+}
+
+/**
+ * The answer of a command given several ids: a heading, then a line per card (what was done, nothing
+ * to do, or the refusal in the core's words); with --json, every card's result. The exit code: 0 when
+ * nothing was refused, 2 when every refusal is that the card is not there, 1 otherwise.
+ */
+function bulkSummary(results: BulkCardResult[], json: boolean | undefined, heading: string, line: (result: BulkCardResult) => string, output: (line: string) => void): number {
+  const refused = results.filter((result) => result.outcome === "refused");
+  if (json) {
+    output(
+      JSON.stringify(
+        {
+          results: results.map((result) => ({
+            id: result.id,
+            outcome: result.outcome,
+            ...(result.write && result.outcome !== "refused" ? { card: result.write.card, events: result.write.events } : {}),
+            ...(result.refusal ? { refused: result.refusal.code, message: result.refusal.message } : {})
+          }))
+        },
+        null,
+        2
+      )
+    );
+  } else {
+    const changed = results.filter((result) => result.outcome === "changed").length;
+    const counts = [`${changed} changed`, ...(results.length - changed - refused.length > 0 ? [`${results.length - changed - refused.length} unchanged`] : []), ...(refused.length > 0 ? [`${refused.length} refused`] : [])];
+    output([`${heading} (${counts.join(", ")}):`, ...results.map((result) => `  #${String(result.id)} ${result.outcome === "refused" ? `refused: ${result.refusal!.message}` : line(result)}`), ...rewriteLines(results.flatMap((result) => result.write?.events ?? []))].join("\n"));
+  }
+  if (refused.length === 0) return 0;
+  return refused.every((result) => ["no-board", "not-found", "usage"].includes(result.refusal!.code)) ? 2 : 1;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -664,11 +717,26 @@ export async function runBoardReply(id: string, options: BoardReplyOptions, depe
   });
 }
 
-export async function runBoardMove(id: string, options: BoardMoveOptions, dependencies: BoardCliDependencies = {}): Promise<number> {
+export async function runBoardMove(id: string | string[], options: BoardMoveOptions, dependencies: BoardCliDependencies = {}): Promise<number> {
   return run(options, dependencies, (ctx, output) => {
-    const cardId = cardIdOf(id);
+    const ids = idsOf(id);
+    oneCardOnly(ids, options);
     const to = need(options.to, "move needs --to <column>.");
     const as = need(options.as, "move needs --as <participant>: who moves the card.");
+    if (ids.length > 1) {
+      // Several cards: each moved through the core, in order; they keep that order in the column.
+      const { config } = readBoardConfig(ctx.dir);
+      const operation: BulkOperation = { kind: "move", to, ...(options.comment !== undefined ? { comment: options.comment } : {}) };
+      const results = bulkWrite(ctx, { as, operation, ids, ...homePaths(options) });
+      const target = columnName(config, columnOf(config, to)?.id ?? to);
+      return bulkSummary(results, options.json, `Moved to ${target}`, (result) => {
+        const moved = result.write!.events.some((event) => event.kind === "item.moved");
+        const commented = result.write!.events.some((event) => event.kind === "comment.added");
+        if (moved) return `from ${columnName(config, result.before?.column ?? "")}${commented ? ", with the comment" : ""}`;
+        return `already in ${target}${commented ? "; the comment was added" : "; nothing was written"}`;
+      }, output);
+    }
+    const cardId = ids[0]!;
     const before = getCard(ctx, cardId).card.column;
     const result = moveCard(ctx, cardId, {
       as,
@@ -688,12 +756,45 @@ export async function runBoardMove(id: string, options: BoardMoveOptions, depend
   });
 }
 
-export async function runBoardSet(id: string, options: BoardSetOptions, dependencies: BoardCliDependencies = {}): Promise<number> {
+/** `archive <ids…>` (a person only): each card leaves the board and stays in its file; `unarchive` brings it back. */
+export async function runBoardArchive(id: string | string[], options: BoardArchiveOptions, dependencies: BoardCliDependencies = {}, back = false): Promise<number> {
   return run(options, dependencies, (ctx, output) => {
-    const cardId = cardIdOf(id);
+    const ids = idsOf(id);
+    oneCardOnly(ids, options);
+    const verb = back ? "unarchive" : "archive";
+    const as = need(options.as, `${verb} needs --as <person>: who ${back ? "brings the card back" : "archives the card"} (a person; agents do not).`);
+    const { config } = readBoardConfig(ctx.dir);
+    if (ids.length > 1) {
+      const results = bulkWrite(ctx, { as, operation: { kind: back ? "unarchive" : "archive" }, ids });
+      return bulkSummary(results, options.json, back ? "Brought back to the board" : "Archived", (result) => {
+        if (result.outcome === "unchanged") return back ? "is not archived; nothing was written" : "was archived already; nothing was written";
+        return back ? `back in ${columnName(config, result.write!.card.column)}` : `archived from ${columnName(config, result.write!.card.column)}`;
+      }, output);
+    }
+    const input = { as, ...(options.ifUpdated ? { expectUpdated: options.ifUpdated } : {}) };
+    const result = back ? unarchiveCard(ctx, ids[0]!, input) : archiveCard(ctx, ids[0]!, input);
+    const card = `#${String(result.card.id)}`;
+    const words =
+      result.events.length === 0
+        ? back
+          ? `${card} is not archived; nothing was written.`
+          : `${card} was archived already; nothing was written.`
+        : back
+          ? `Brought ${card} back to the board, in ${columnName(config, result.card.column)}.`
+          : `Archived ${card}: it left the board and stays in its file (\`list --archived\` shows it).`;
+    output(writeSummary(result, options.json, words));
+    return 0;
+  });
+}
+
+export async function runBoardSet(id: string | string[], options: BoardSetOptions, dependencies: BoardCliDependencies = {}): Promise<number> {
+  return run(options, dependencies, (ctx, output) => {
+    const ids = idsOf(id);
+    oneCardOnly(ids, options);
     const as = need(options.as, "set needs --as <participant>: who changes the card.");
     const fields: Record<string, YamlValue | null> = {};
-    if (options.field && options.field.length > 0) Object.assign(fields, typedFields(options.field, getCard(ctx, cardId).card.type));
+    // Each field must be one of every named card's type: a typo is refused, not written as a new field.
+    if (options.field && options.field.length > 0) for (const cardId of ids) Object.assign(fields, typedFields(options.field, getCard(ctx, cardId).card.type));
     for (const name of options.unsetField ?? []) {
       if (Object.prototype.hasOwnProperty.call(fields, name)) throw new UsageError(`set cannot both set and remove the field ${name}.`);
       fields[name] = null;
@@ -708,7 +809,14 @@ export async function runBoardSet(id: string, options: BoardSetOptions, dependen
       ...(Object.keys(fields).length > 0 ? { fields } : {})
     };
     if (Object.keys(changes).length === 0) throw new UsageError("set needs something to change: --tag, --untag, --relate, --unrelate, --status, --color, --field or --unset-field.");
-    const result = updateCard(ctx, cardId, { as, changes, ...(options.ifUpdated ? { expectUpdated: options.ifUpdated } : {}), ...homePaths(options) });
+    if (ids.length > 1) {
+      const results = bulkWrite(ctx, { as, operation: { kind: "set", changes }, ids, ...homePaths(options) });
+      return bulkSummary(results, options.json, "Changed", (result) => {
+        const said = result.write!.events.map((event) => describeEvent(event));
+        return said.length > 0 ? said.join("; ") : "nothing to change; nothing was written";
+      }, output);
+    }
+    const result = updateCard(ctx, ids[0]!, { as, changes, ...(options.ifUpdated ? { expectUpdated: options.ifUpdated } : {}), ...homePaths(options) });
     const said = result.events.map((event) => describeEvent(event));
     output(writeSummary(result, options.json, said.length > 0 ? `#${String(result.card.id)}: ${said.join("; ")}.` : `Nothing to change on #${String(result.card.id)}; nothing was written.`));
     return 0;
@@ -993,18 +1101,18 @@ export function createBoardCommand(host: BoardHost = {}): Command {
   );
   board.addCommand(
     rewritable(common(new Command("move")))
-      .description("Move a card to a column (an agent: only into agents.mayMoveTo, never a person's column)")
-      .argument("<id>", "the card's id")
+      .description("Move one card, or several, to a column (an agent: only into agents.mayMoveTo, never a person's column); several cards keep their order there, and a refusal of one leaves the others moved")
+      .argument("<ids...>", "the card's id, or several ids (3 4 7)")
       .option("--to <column>", "the column (its id or name)")
       .option("--as <participant>", "who moves it")
-      .option("--comment <markdown>", "a comment written with the move")
-      .option("--if-updated <time>", "refuse when the card's updated is not this (a stale write)")
-      .action(async (id: string, options: BoardMoveOptions) => exit(await runBoardMove(id, options, deps)))
+      .option("--comment <markdown>", "a comment written with the move (on each card)")
+      .option("--if-updated <time>", "refuse when the card's updated is not this (a stale write); with one id only")
+      .action(async (ids: string[], options: BoardMoveOptions) => exit(await runBoardMove(ids, options, deps)))
   );
   board.addCommand(
     rewritable(common(new Command("set")))
-      .description("Change a card's tags, relations, status line, colour or fields, each change with its event")
-      .argument("<id>", "the card's id")
+      .description("Change the tags, relations, status line, colour or fields of one card, or of several (the same change on each), each change with its event")
+      .argument("<ids...>", "the card's id, or several ids (3 4 7)")
       .option("--as <participant>", "who changes it")
       .option("--tag <tag>", "add a tag (repeatable)", collect)
       .option("--untag <tag>", "remove a tag (repeatable)", collect)
@@ -1014,8 +1122,24 @@ export function createBoardCommand(host: BoardHost = {}): Command {
       .option("--color <hex|none>", "the person's colour mark: b33f40 red, ed944d orange, edd94c yellow, 48a14d green, 6577b3 blue (quote it when you write the #), or none")
       .option("--field <name=value>", 'set a field of the card\'s type, as ask="…" on a decision; a JSON list or mapping is read as one (repeatable)', collect)
       .option("--unset-field <name>", "remove a field, one the card keeps from another type too (repeatable)", collect)
-      .option("--if-updated <time>", "refuse when the card's updated is not this (a stale write)")
-      .action(async (id: string, options: BoardSetOptions) => exit(await runBoardSet(id, options, deps)))
+      .option("--if-updated <time>", "refuse when the card's updated is not this (a stale write); with one id only")
+      .action(async (ids: string[], options: BoardSetOptions) => exit(await runBoardSet(ids, options, deps)))
+  );
+  board.addCommand(
+    common(new Command("archive"))
+      .description("Archive one card, or several (a person only): each leaves the board and stays in its file, searchable; `unarchive` brings it back")
+      .argument("<ids...>", "the card's id, or several ids (3 4 7)")
+      .option("--as <person>", "who archives it (a person)")
+      .option("--if-updated <time>", "refuse when the card's updated is not this (a stale write); with one id only")
+      .action(async (ids: string[], options: BoardArchiveOptions) => exit(await runBoardArchive(ids, options, deps)))
+  );
+  board.addCommand(
+    common(new Command("unarchive"))
+      .description("Bring one archived card, or several, back to the board, into the column each was archived from (a person only)")
+      .argument("<ids...>", "the card's id, or several ids (3 4 7)")
+      .option("--as <person>", "who brings it back (a person)")
+      .option("--if-updated <time>", "refuse when the card's updated is not this (a stale write); with one id only")
+      .action(async (ids: string[], options: BoardArchiveOptions) => exit(await runBoardArchive(ids, options, deps, true)))
   );
   board.addCommand(
     common(new Command("validate"))

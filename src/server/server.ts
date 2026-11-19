@@ -5,6 +5,7 @@ import {
   archiveCard,
   boardContext,
   BoardRefusal,
+  bulkWrite,
   checkBoard,
   createCards,
   isBoardRefusal,
@@ -14,9 +15,13 @@ import {
   parseCardId,
   readBoardConfig,
   readEvents,
+  readPreferences,
+  refusalReason,
   updateCard,
   workspaceOf,
+  writePreferences,
   type BoardContext,
+  type BulkOperation,
   type CardChanges,
   type CardId,
   type NewCardInput,
@@ -25,11 +30,11 @@ import {
   type WriteResult,
   type YamlValue
 } from "../core/index.js";
-import type { EditorInfo, EventsPayload, RefusalPayload, WritePayload } from "./contract.js";
+import type { BatchCardResult, BatchOperationName, BatchPayload, EditorInfo, EventsPayload, PreferencesPayload, RefusalPayload, WritePayload } from "./contract.js";
 import { editorInfo } from "./editor.js";
 import { PageFiles } from "./page.js";
 import { BoardStream } from "./stream.js";
-import { boardPayload, cardDetail, eventItem, notificationsPayload, personOf, summaryOf } from "./views.js";
+import { boardPayload, cardDetail, eventItem, notificationsPayload, personOf, summariesOf, summaryOf } from "./views.js";
 
 /**
  * The board's local process: Node's own HTTP server on 127.0.0.1, the page's files, a JSON API
@@ -265,6 +270,57 @@ function newCardOf(body: Body): NewCardInput {
   };
 }
 
+const BATCH_OPERATIONS: BatchOperationName[] = ["move", "archive", "unarchive", "tags", "project"];
+
+/** POST /api/cards/batch's body as the core's bulk call: the operation, the ids, each card's expected `updated`. */
+function batchOf(body: Body, person: string): { as: string; operation: BulkOperation; ids: CardId[]; expectUpdated: Record<string, string> } {
+  const name = requiredText(body, "operation", "operation");
+  if (!(BATCH_OPERATIONS as string[]).includes(name)) throw usage(`Refused: "${name}" is not an operation of the batch (${BATCH_OPERATIONS.join(", ")}); nothing was written.`);
+  const rawIds = body.ids;
+  if (!Array.isArray(rawIds)) throw usage("Refused: ids must be a list of card ids; nothing was written.");
+  const ids = rawIds.map((value) => {
+    const id = typeof value === "number" ? (Number.isSafeInteger(value) && value > 0 ? value : undefined) : typeof value === "string" ? parseCardId(value) : undefined;
+    if (id === undefined) throw usage(`Refused: "${String(value)}" is not a card id; nothing was written.`);
+    return id;
+  });
+  const expectUpdated: Record<string, string> = {};
+  const given = body.expectUpdated;
+  if (given !== undefined && given !== null) {
+    if (typeof given !== "object" || Array.isArray(given)) throw usage("Refused: expectUpdated must map each card id to the updated the page read; nothing was written.");
+    for (const [key, value] of Object.entries(given as Record<string, unknown>)) {
+      if (typeof value !== "string") throw usage(`Refused: expectUpdated["${key}"] must be a time as text; nothing was written.`);
+      expectUpdated[key] = value;
+    }
+  }
+  const as = optionalText(body, "as", "as") ?? person;
+  let operation: BulkOperation;
+  switch (name as BatchOperationName) {
+    case "move": {
+      const after = placeOf(body);
+      operation = { kind: "move", to: requiredText(body, "to", "column to move the cards to (to)"), ...(after !== undefined ? { after } : {}) };
+      break;
+    }
+    case "archive":
+      operation = { kind: "archive" };
+      break;
+    case "unarchive":
+      operation = { kind: "unarchive" };
+      break;
+    case "tags": {
+      const add = textList(body, "add", "add");
+      const remove = textList(body, "remove", "remove");
+      operation = { kind: "tags", ...(add ? { add } : {}), ...(remove ? { remove } : {}) };
+      break;
+    }
+    case "project": {
+      if (body.replace !== undefined && typeof body.replace !== "boolean") throw usage("Refused: replace must be true or false; nothing was written.");
+      operation = { kind: "project", name: requiredText(body, "project", "project's name (project)"), replace: body.replace === true };
+      break;
+    }
+  }
+  return { as, operation, ids, expectUpdated };
+}
+
 interface Reply {
   status: number;
   body: unknown;
@@ -376,6 +432,51 @@ export function createBoardServer(options: BoardServerOptions): BoardServer {
       run: (match, _url, body) => {
         const expectUpdated = optionalText(body, "expectUpdated", "expectUpdated");
         return written(archiveCard(ctx, cardIdOf(match[1]!), { as: person(), ...(expectUpdated !== undefined ? { expectUpdated } : {}) }));
+      }
+    },
+    {
+      method: "POST",
+      pattern: /^\/api\/cards\/batch$/,
+      run: (_match, _url, body) => {
+        const input = batchOf(body, person());
+        const results = bulkWrite(ctx, input);
+        stream.scan();
+        const { config } = readBoardConfig(ctx.dir);
+        const summaries = summariesOf(ctx, results.filter((result) => result.outcome !== "refused").map((result) => result.id));
+        const lines: BatchCardResult[] = results.map((result) => {
+          const summary = summaries.get(String(result.id));
+          return {
+            id: result.id,
+            outcome: result.outcome,
+            ...(result.refusal ? { refused: { code: result.refusal.code, message: result.refusal.message, reason: refusalReason(result.refusal) } } : {}),
+            ...(summary ? { summary } : {}),
+            ...(result.write && result.outcome !== "refused" ? { events: result.write.events.map((event) => eventItem(event, config)) } : {}),
+            ...(result.before ? { before: result.before } : {})
+          };
+        });
+        const count = (outcome: BatchCardResult["outcome"]): number => lines.filter((line) => line.outcome === outcome).length;
+        const payload: BatchPayload = { operation: body.operation as BatchOperationName, results: lines, changed: count("changed"), unchanged: count("unchanged"), refused: count("refused") };
+        return { status: 200, body: payload };
+      }
+    },
+    {
+      method: "GET",
+      pattern: /^\/api\/preferences$/,
+      run: () => {
+        const read = readPreferences(ctx.dir);
+        const payload: PreferencesPayload = { preferences: read.preferences, stored: read.stored, ...(read.problems.length > 0 ? { problems: read.problems } : {}) };
+        return { status: 200, body: payload };
+      }
+    },
+    {
+      method: "PUT",
+      pattern: /^\/api\/preferences$/,
+      run: (_match, _url, body) => {
+        const preferences = writePreferences(ctx, body);
+        // The other pages on this board (a browser tab, an editor's tab) take the new choices too.
+        stream.tell("preferences", {});
+        const payload: PreferencesPayload = { preferences, stored: true };
+        return { status: 200, body: payload };
       }
     },
     {

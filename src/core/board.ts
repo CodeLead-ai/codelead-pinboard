@@ -1062,6 +1062,21 @@ export function archiveCard(ctx: BoardContext, id: CardId, input: { as: string; 
   });
 }
 
+/**
+ * Brings an archived card back to the board, into the column it was archived from, with its
+ * `item.unarchived` event (the page's Undo of an archive). Only a person does; a card that is not
+ * archived is left as it is.
+ */
+export function unarchiveCard(ctx: BoardContext, id: CardId, input: { as: string; expectUpdated?: string }): WriteResult {
+  return changeCard(ctx, id, input.as, input.expectUpdated, (card, _config, participant, at) => {
+    if (participant.kind !== "person") throw new BoardRefusal("not-allowed", `Refused: ${participant.id} is an agent; only a person brings an archived card back. Nothing was written.`);
+    if (card.archived === undefined) return { events: [] };
+    const next: CardData = { ...card };
+    delete next.archived;
+    return { next, events: [{ at, by: input.as, item: card.id, kind: "item.unarchived", data: { column: card.column } }] };
+  });
+}
+
 // ---------------------------------------------------------------------------------------------
 // Checking: what changed since a participant's cursor
 
@@ -1290,7 +1305,8 @@ export function defaultParticipants(userName?: string): Participant[] {
   ];
 }
 
-const GITIGNORE = ["cursors/", LOCK_FILE, PRIVATE_NAMES_FILE, ".*.tmp", ""].join("\n");
+// `.local/`: this machine's view preferences (preferences.ts).
+const GITIGNORE = ["cursors/", LOCK_FILE, PRIVATE_NAMES_FILE, ".*.tmp", ".local/", ""].join("\n");
 
 /**
  * Creates the board folder: board.json, AGENTS.md, an empty events.jsonl, items/, cursors/ and a

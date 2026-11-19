@@ -46,6 +46,8 @@ export function describeEvent(event: BoardEvent, config?: BoardConfig): string {
       return `moved it from ${column(data.from)} to ${column(data.to)}`;
     case "item.archived":
       return "archived it";
+    case "item.unarchived":
+      return "brought it back from the archive";
     case "comment.added":
       return `commented: ${typeof data.excerpt === "string" ? data.excerpt : ""}`.trimEnd();
     case "relation.added":

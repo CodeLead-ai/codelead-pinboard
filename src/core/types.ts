@@ -164,6 +164,7 @@ export const EVENT_KINDS = [
   "item.updated",
   "item.moved",
   "item.archived",
+  "item.unarchived",
   "comment.added",
   "relation.added",
   "relation.removed",

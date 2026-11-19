@@ -5,6 +5,7 @@
 export {
   createBoardCommand,
   DEFAULT_BOARD_PORT,
+  runBoardArchive,
   runBoardCheck,
   runBoardImport,
   runBoardInit,
@@ -18,6 +19,7 @@ export {
   runBoardShow,
   runBoardTidy,
   runBoardValidate,
+  type BoardArchiveOptions,
   type BoardCheckOptions,
   type BoardCliDependencies,
   type BoardHost,

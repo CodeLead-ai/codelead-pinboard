@@ -67,8 +67,11 @@ function newestSource(dir: string): number {
   return newest;
 }
 
-/** The files outside the page's folder that its build bundles: the core's rule of mentions, which the page shares. */
-const SHARED_SOURCES = [["..", "core", "mentions.ts"]];
+/** The files outside the page's folder that its build bundles: the core's rule of mentions and its catalogue of themes, which the page shares. */
+const SHARED_SOURCES = [
+  ["..", "core", "mentions.ts"],
+  ["..", "core", "themes.ts"]
+];
 
 function sharedSourceTime(location: PageLocation): number {
   let newest = 0;
@@ -155,14 +158,17 @@ const TYPES: Record<string, string> = {
   ".map": "application/json; charset=utf-8"
 };
 
-/** The page's own scripts by hash, the fonts from Google Fonts, the API on the same origin, images of the page only; no other source. */
+/**
+ * The page's own scripts by hash, its own styles and fonts (bundled in the package: the page works with
+ * no network at all), the API on the same origin, images of the page only; no other source.
+ */
 export function contentSecurityPolicy(html: string): string {
   const inline = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)].map((match) => `'sha256-${createHash("sha256").update(match[1]!, "utf8").digest("base64")}'`);
   return [
     "default-src 'self'",
     `script-src 'self'${inline.length > 0 ? ` ${inline.join(" ")}` : ""}`,
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' data: https://fonts.gstatic.com",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self' data:",
     // No remote image: an image in a card's text must not tell another server that the card was opened.
     "img-src 'self' data:",
     "connect-src 'self'",

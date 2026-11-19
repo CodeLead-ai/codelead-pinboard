@@ -159,6 +159,22 @@ export function summaryOf(ctx: BoardContext, id: CardId): CardSummary {
   return summarize(card, view.config, person, mine, cardRanks(events, view.cards).get(String(card.id)) ?? 0);
 }
 
+/** Several cards' tiles, read once from the files as they are now (a card no longer readable is left out). */
+export function summariesOf(ctx: BoardContext, ids: CardId[]): Map<string, CardSummary> {
+  const wanted = new Set(ids.map(String));
+  const view = readBoard(ctx);
+  const person = personOf(view.config);
+  const { events } = readEvents(ctx.dir);
+  const byCard = eventsByCard(events);
+  const ranks = cardRanks(events, view.cards);
+  const out = new Map<string, CardSummary>();
+  for (const card of view.cards) {
+    const key = String(card.id);
+    if (wanted.has(key)) out.set(key, summarize(card, view.config, person, byCard.get(key) ?? [], ranks.get(key) ?? 0));
+  }
+  return out;
+}
+
 export function boardPayload(ctx: BoardContext, editor: EditorInfo): BoardPayload {
   const view = readBoard(ctx);
   const { config } = view;
