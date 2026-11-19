@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BACKGROUNDS, backdropText, contrast, parseColour } from "../page/src/appearance.mjs";
+import { BACKGROUNDS, backdropText, columnEdge, contrast, EDGE_CONTRAST, parseColour } from "../page/src/appearance.mjs";
 import { inProject, NO_PROJECT, projectEntries, projectLabel, projectNamesOf, projectTags, readProject } from "../page/src/projects.mjs";
 import { extend, inBoardOrder, prune, selectAll, toggle } from "../page/src/selection.mjs";
 
@@ -86,6 +86,27 @@ describe("the board's background", () => {
     // A mid grey: the ink still reads, the muted text does not and takes the darker one.
     expect(backdropText(paper, "#c8ccd2")).toEqual({ ink: "#0b1630", muted: "#3d4b66" });
     expect(backdropText(paper, "not a colour")).toBeUndefined();
+  });
+
+  it("keeps a column's own edge while it stands 3:1 apart from the colour, then its surface's, then the theme's quietest colour that does", () => {
+    const lines = ["#c4cfe0", "#66738b", "#5b6b86", "#31405c", "#0b1630", "#3d4b66", "#c3cee0", "#0b1630", "#f4f7fb"];
+    const well = "#e5ebf5";
+    // A dark navy: the light column is its own edge, through its transparent line.
+    expect(columnEdge(well, "transparent", "#1a2a3a", lines)).toBeUndefined();
+    // A light green, and the column's own surface: the first line that stands 3:1 apart.
+    for (const background of ["#dff1e6", well]) {
+      const edge = columnEdge(well, "transparent", background, lines)!;
+      expect(edge).toBe("#66738b");
+      expect(contrast(parseColour(edge)!, parseColour(background)!)).toBeGreaterThanOrEqual(EDGE_CONTRAST);
+    }
+    // A grey line of a high-contrast theme: kept on a light colour, given the white surface's colour on a dark one.
+    expect(columnEdge("#ffffff", "#6b6b6b", "#dff1e6", lines)).toBeUndefined();
+    expect(columnEdge("#ffffff", "#6b6b6b", "#1a2a3a", lines)).toBe("#ffffff");
+    // A mid grey close to a dark theme's column: the light text does it.
+    const navy = ["#2a3a5a", "#7787a3", "#8fa0bc", "#c3cee0", "#e8eef8", "#3d4b66", "#c3cee0", "#0b1630", "#e8eef8"];
+    const edge = columnEdge("#0b1222", "transparent", "#2a3346", navy)!;
+    expect(contrast(parseColour(edge)!, parseColour("#2a3346")!)).toBeGreaterThanOrEqual(EDGE_CONTRAST);
+    expect(columnEdge(well, "transparent", "not a colour", lines)).toBeUndefined();
   });
 
   it("offers twelve backgrounds for each lightness, light ones that keep a dark ink readable and dark ones that keep a light ink readable", () => {

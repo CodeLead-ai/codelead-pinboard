@@ -1986,7 +1986,7 @@ kbd {
 
 .column-title h2 {
   margin: 0;
-  color: var(--board-ink);
+  color: var(--ink);
   font-family: var(--font-display);
   font-size: 17px;
   font-weight: 680;
@@ -2000,11 +2000,6 @@ kbd {
   font: 500 12px/1 var(--font-mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-
-.column-head .count,
-.column-strip .count {
-  color: var(--board-muted);
 }
 
 /* Over the column's limit: the danger colour, and an underline, so that colour is not the only sign. */
@@ -2030,7 +2025,7 @@ kbd {
 
 .column-note {
   margin: 3px 0 0;
-  color: var(--board-muted);
+  color: var(--muted);
   font-size: 12px;
   font-style: italic;
 }
@@ -2080,7 +2075,7 @@ kbd {
   border: 0;
   border-radius: 14px;
   background: transparent;
-  color: var(--board-ink);
+  color: var(--ink);
 }
 
 .strip-name {
@@ -3632,42 +3627,28 @@ dialog.confirm p {
 /* ---- a board background of the person's own ---------------------------------------------------- */
 
 /*
- * The picked colour is the board's backdrop: each column's cards keep the theme's well (opaque, as it
- * looks on the theme's own ground), and the column's title, count and note are drawn on the colour
- * itself, in --board-ink and --board-muted, which App.tsx switches to the theme's text for a light or a
- * dark ground when the theme's own would read under 4.5:1 there.
+ * The picked colour is the board's backdrop only. Each column stays what it is on the theme's own
+ * ground: one rounded surface holding its header and its cards, in the theme's column surface made
+ * opaque (--well-solid: the translucent well would take the colour's tint), its text in the theme's own
+ * ink. Its edge stands 3:1 apart from the colour: the column's fill is that edge when the two are far
+ * apart; when they are close, App.tsx gives the column a line that is (--column-edge, appearance.mts).
+ * What is still drawn on the colour itself (the gaps between the columns, the board's scrollbar) takes
+ * --board-ink and --board-muted, which App.tsx switches to the theme's text for a light or a dark
+ * ground when the theme's own would read under 4.5:1 there.
  */
 :root[data-background] .column {
-  border-color: transparent;
-  background: transparent;
+  border-color: var(--column-edge, var(--well-line));
+  background: var(--well-solid);
   backdrop-filter: none;
 }
 
-:root[data-background] .column-body {
-  margin: 0 2px 2px;
-  border-radius: 12px;
+:root[data-background] .column.drop-target {
+  border-color: var(--ink-2);
   background: var(--well-solid);
 }
 
-:root[data-background] .column.drop-target .column-body {
-  outline: 2px dashed var(--board-ink);
-  outline-offset: -2px;
-}
-
-:root[data-background] .column-head::after {
-  background: var(--board-muted);
-}
-
-:root[data-background] .column-person .column-head::after {
-  background: var(--board-ink);
-}
-
-:root[data-background] .column-tools .icon-button {
-  color: var(--board-ink);
-}
-
-:root[data-background] .column-collapsed {
-  border-color: var(--board-muted);
+:root[data-background] .board {
+  scrollbar-color: var(--board-muted) transparent;
 }
 
 /* ---- projects: the selector at the left of the top bar ------------------------------------------ */

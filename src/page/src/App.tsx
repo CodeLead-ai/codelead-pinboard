@@ -17,7 +17,7 @@ import type {
 } from "../../server/contract.js";
 import { choicesFor, defaultPreferences, effectiveTheme, THEME_BACKGROUND } from "../../core/themes.js";
 import { api, Refused, wordsOf } from "./api.js";
-import { backdropText } from "./appearance.mjs";
+import { backdropText, columnEdge } from "./appearance.mjs";
 import { BoardView } from "./Board.js";
 import { BulkBar } from "./BulkBar.js";
 import { CardPanel, type PanelActions } from "./CardPanel.js";
@@ -410,15 +410,19 @@ export function App() {
     const background = themeChoices.background;
     const clear = (...names: string[]): void => names.forEach((name) => root.style.removeProperty(name));
     if (background === THEME_BACKGROUND) {
-      clear("--board-bg", "--board-ink", "--board-muted");
+      clear("--board-bg", "--board-ink", "--board-muted", "--column-edge");
       root.removeAttribute("data-background");
       return;
     }
     root.style.setProperty("--board-bg", background);
     root.setAttribute("data-background", background);
-    // The text on the backdrop keeps the theme's ink while it reads at 4.5:1 on the picked colour.
     const style = getComputedStyle(root);
     const token = (name: string): string => style.getPropertyValue(name).trim();
+    // The columns keep the theme's surface; a line around each when that surface is close to the colour.
+    const edge = columnEdge(token("--well-solid"), token("--well-line"), background, ["--line-2", "--faint", "--muted", "--ink-2", "--ink", "--muted-on-light", "--muted-on-dark", "--ink-on-light", "--ink-on-dark"].map(token));
+    if (edge) root.style.setProperty("--column-edge", edge);
+    else clear("--column-edge");
+    // What is drawn on the backdrop itself keeps the theme's ink while it reads at 4.5:1 on the picked colour.
     const text = backdropText(
       { ink: token("--ink"), muted: token("--muted"), inkOnLight: token("--ink-on-light"), inkOnDark: token("--ink-on-dark"), mutedOnLight: token("--muted-on-light"), mutedOnDark: token("--muted-on-dark") },
       background

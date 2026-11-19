@@ -263,8 +263,9 @@ Each theme reads in its own font. The text is the same size in all of them. The 
 the package: the page needs no network.
 
 **Board background.** In the same menu: the theme's own, one of twelve colours that suit the
-theme, or any colour. The cards and columns keep the theme's look. When a column's title would be
-hard to read on your colour, it switches to a lighter or darker text by itself.
+theme, or any colour. Your colour is the backdrop only: each column keeps the theme's look, one
+surface with its title and its cards. When the column's surface is close to your colour, a line
+around each column keeps it apart by itself.
 
 **Kept per project.** Pick Ember while `api` is shown, and `api` opens in Ember next time.
 **All projects** keeps the default; **Use the default** forgets a project's own choice. The

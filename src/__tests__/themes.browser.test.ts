@@ -94,8 +94,8 @@ window.__checks = (() => {
   };
   const faded = (el) => { for (let e = el; e; e = e.parentElement) { if (parseFloat(getComputedStyle(e).opacity) < 1) return true; if (e.matches && e.matches(":disabled")) return true; } return false; };
 
-  /** Text under 'min' to its ground, and control edges under 'edge' to the ground around them. */
-  const contrast = (scope, min, edge) => {
+  /** Text under 'min' to its ground, and the edges of the controls 'edges' names under 'edge' to the ground around them. */
+  const contrast = (scope, min, edge, edges = "button, input, select, textarea, .tile, .select, .search, .field-input") => {
     const low = [];
     const root = document.querySelector(scope) || document.body;
     for (const el of [root, ...root.querySelectorAll("*")]) {
@@ -106,7 +106,7 @@ window.__checks = (() => {
         const r = fg ? ratio(over(fg, behind(el)), behind(el)) : 0;
         if (r < min) low.push("text " + describe(el) + " " + r.toFixed(2) + ": " + el.textContent.trim().slice(0, 30));
       }
-      if (el.matches("button, input, select, textarea, .tile, .select, .search, .field-input")) {
+      if (el.matches(edges)) {
         const cs = getComputedStyle(el);
         const width = parseFloat(cs.borderTopWidth);
         const bc = parse(cs.borderTopColor);
@@ -120,7 +120,15 @@ window.__checks = (() => {
   };
 
   const ratioOf = (fg, bg) => ratio(parse(fg), parse(bg));
-  return { outsideTokens, contrast, ratioOf, behind: (el) => behind(el) };
+
+  /** A column's edge against what is around it: its line drawn over its fill (a transparent line shows the fill), to the ground behind the column. */
+  const edge = (el) => {
+    const cs = getComputedStyle(el);
+    const around = behind(el.parentElement);
+    const fill = over(parse(cs.backgroundColor), around);
+    return ratio(over(parse(cs.borderTopColor), fill), around);
+  };
+  return { outsideTokens, contrast, ratioOf, behind: (el) => behind(el), edge };
 })();
 `;
 
@@ -270,45 +278,61 @@ describe.skipIf(!browser)("themes, projects, the board's background and the bulk
     await page.setViewportSize({ width: 1280, height: 800 });
   }, 120_000);
 
-  it("gives the board a background of the person's own: the columns keep the theme's well, their titles and counts stay at 4.5:1 on the colour", async () => {
-    await showTheme("paper");
-    const colourOf = (selector: string) => (): Promise<string> => page.evaluate(`getComputedStyle(document.querySelector(${JSON.stringify(selector)})).color`) as Promise<string>;
-    const title = colourOf("[data-column=backlog] .column-title h2");
-    const count = colourOf("[data-column=backlog] .column-head .count");
-    const ownTitle = await title();
-    const ownCount = await count();
-    const wellOnPaper = String(await page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--well-solid')")).trim();
-    // A dark colour on a light theme: the titles and counts switch to the theme's text for a dark ground.
+  it("keeps each column one surface on a background of the person's own: the theme's column surface holds the header and the cards, the title reads at 4.5:1 there, the edge stands 3:1 apart from the colour", async () => {
+    const token = (name: string): Promise<string> => page.evaluate(`getComputedStyle(document.documentElement).getPropertyValue(${JSON.stringify(name)}).trim()`) as Promise<string>;
+    const rgb = (hex: string): string => `rgb(${[1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16)).join(", ")})`;
+    interface Column {
+      id: string;
+      fill: string;
+      behindTitle: string;
+      headInside: boolean;
+      title: number;
+      edge: number;
+    }
+    const columns = (): Promise<Column[]> =>
+      evaluate<Column[]>(
+        "[...document.querySelectorAll('.column')].map((column) => { const head = column.querySelector('.column-head, .column-strip'); const title = column.querySelector('.column-title h2, .strip-name'); const c = column.getBoundingClientRect(), h = head.getBoundingClientRect(); const fill = getComputedStyle(column).backgroundColor; const b = window.__checks.behind(title); return { id: column.dataset.column, fill, behindTitle: 'rgb(' + [b.r, b.g, b.b].map(Math.round).join(', ') + ')', headInside: h.left >= c.left && h.right <= c.right && h.top >= c.top && h.bottom <= c.bottom, title: window.__checks.ratioOf(getComputedStyle(title).color, fill), edge: window.__checks.edge(column) }; })"
+      );
+    for (const theme of THEMES) {
+      await showTheme(theme.id);
+      const surface = await token("--well-solid");
+      // A light green, a dark navy, and the theme's own column surface.
+      for (const background of ["#dff1e6", "#1a2a3a", surface]) {
+        await showTheme(theme.id, background);
+        const where = `${theme.id} on ${background}`;
+        expect(await page.evaluate("getComputedStyle(document.querySelector('.board')).backgroundColor"), where).toBe(rgb(background));
+        const shown = await columns();
+        // Done is collapsed at this width: a collapsed column is held to the same.
+        expect(shown.map((column) => column.id), where).toContain("done");
+        for (const column of shown) {
+          expect(column.fill, `${where}: ${column.id}'s surface`).toBe(rgb(surface));
+          if (background !== surface) expect(column.fill, `${where}: ${column.id}`).not.toBe(rgb(background));
+          expect(column.behindTitle, `${where}: behind ${column.id}'s title`).toBe(rgb(surface));
+          expect(column.headInside, `${where}: ${column.id}'s header`).toBe(true);
+          expect(column.title, `${where}: ${column.id}'s title`).toBeGreaterThanOrEqual(4.5);
+          expect(column.edge, `${where}: ${column.id}'s edge`).toBeGreaterThanOrEqual(3);
+        }
+        // The cards keep the theme's surface.
+        expect(await page.evaluate("getComputedStyle(document.querySelector(\".tile[data-card='2']\")).backgroundColor"), where).toBe(await page.evaluate("(() => { const p = document.createElement('span'); p.style.color = 'var(--surface)'; document.body.appendChild(p); const c = getComputedStyle(p).color; p.remove(); return c; })()"));
+      }
+    }
+    // What is still drawn on the colour itself, the board's scrollbar, switches to stay readable: Paper's text for a dark ground on a dark navy.
     await showTheme("paper", "#1a2a3a");
-    expect(await page.evaluate("getComputedStyle(document.querySelector('.board')).backgroundColor")).toBe("rgb(26, 42, 58)");
-    await expect.poll(title).toBe("rgb(244, 247, 251)");
-    expect(await count()).toBe("rgb(195, 206, 224)");
-    const ratios = await evaluate<number[]>(
-      "[...document.querySelectorAll('.column-title h2, .column-head .count, .column-note')].map((el) => { const fg = getComputedStyle(el).color; const bg = window.__checks.behind(el); return window.__checks.ratioOf(fg, 'rgb(' + bg.r + ', ' + bg.g + ', ' + bg.b + ')'); })"
-    );
-    expect(ratios.length).toBeGreaterThan(8);
-    for (const value of ratios) expect(value).toBeGreaterThanOrEqual(4.5);
-    // The cards keep the theme's surface, and the columns' wells their look on the theme's own ground.
-    expect(await page.evaluate("getComputedStyle(document.querySelector(\".tile[data-card='2']\")).backgroundColor")).toBe("rgb(255, 255, 255)");
-    expect(wellOnPaper).toBe("#e5ebf5");
-    expect(await page.evaluate("getComputedStyle(document.querySelector('[data-column=backlog] .column-body')).backgroundColor")).toBe("rgb(229, 235, 245)");
-    // A pale colour on a dark theme: the theme's text for a light ground.
-    await showTheme("navy", "#e7eaee");
-    await expect.poll(title).toBe("rgb(11, 22, 48)");
-    expect(await count()).toBe("rgb(61, 75, 102)");
-    // White on a light theme: the theme's own text reads there, and stays.
+    expect(await token("--board-muted")).toBe("#c3cee0");
+    expect(String(await page.evaluate("getComputedStyle(document.querySelector('.board')).scrollbarColor"))).toMatch(/^rgb\(195, 206, 224\)/);
     await showTheme("paper", "#ffffff");
-    await expect.poll(title).toBe(ownTitle);
-    expect(await count()).toBe(ownCount);
+    expect(await token("--board-muted")).toBe(await token("--muted"));
     // Picked from the menu: kept in the preferences.
     await page.getByTestId("theme").click();
     await page.locator("[data-background='#dcebf7']").click();
     await expect.poll(() => (JSON.parse(fs.readFileSync(preferencesFile(), "utf8")) as { default: { background?: string } }).default.background).toBe("#dcebf7");
     await page.keyboard.press("Escape");
-    await showTheme("linen", "#3a2418");
+    await showTheme("linen", "#dff1e6");
     await shot("custom-background");
+    await showTheme("ember", "#0f2a2c");
+    await shot("custom-background-dark");
     await showTheme("paper");
-  }, 60_000);
+  }, 120_000);
 
   it("picks cards with Cmd/Ctrl-click, x, Shift-click and a column's menu, keeps the pick through live changes, and Esc clears it", async () => {
     await showTheme("paper");
