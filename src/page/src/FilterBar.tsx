@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { BoardPayload } from "../../server/contract.js";
 import { ChevronDown, CloseIcon, SearchIcon } from "./icons.js";
-import { classes, EMPTY_FILTER, FOR_CODELEAD_TAG, isFiltering, repositoriesOf, tagGroups, type Filter } from "./model.js";
+import { classes, EMPTY_FILTER, FOR_CODELEAD_TAG, isFiltering, tagGroups, type Filter } from "./model.js";
 
 export interface FilterBarProps {
   board: BoardPayload;
@@ -13,12 +13,11 @@ export interface FilterBarProps {
 }
 
 /**
- * The filter (spec 6.1): column, type, tags (the reserved namespaces grouped), repository and free
- * text, stacked; "fade" dims what does not match, "hide" removes it; the columns never move. All of
+ * The filter (spec 6.1): column, type, tags (the reserved namespaces grouped) and free text,
+ * stacked, within the project the top bar shows; "fade" dims what does not match, "hide" removes it; the columns never move. All of
  * it is in the URL's query.
  */
 export function FilterBar({ board, filter, onChange, matching, total, searchRef }: FilterBarProps) {
-  const repositories = useMemo(() => repositoriesOf(board.cards), [board.cards]);
   const groups = useMemo(() => tagGroups(board.cards, board.tagNamespaces), [board.cards, board.tagNamespaces]);
   const set = (part: Partial<Filter>): void => onChange({ ...filter, ...part });
   const filtering = isFiltering(filter);
@@ -59,9 +58,6 @@ export function FilterBar({ board, filter, onChange, matching, total, searchRef 
         For CodeLead
       </button>
       <TagPicker groups={groups} chosen={filter.tags} onChange={(tags) => set({ tags })} />
-      {repositories.length > 0 ? (
-        <Select label="Repository" value={filter.repo} onChange={(repo) => set({ repo })} options={repositories.map((name) => [name, name])} anyWords="Any repository" testId="filter-repo" />
-      ) : null}
 
       <label className="check" title="Archived cards leave the board; they stay in their files and stay searchable.">
         <input type="checkbox" checked={filter.archived} onChange={(event) => set({ archived: event.target.checked })} data-testid="filter-archived" />

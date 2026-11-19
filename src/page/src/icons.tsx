@@ -222,6 +222,45 @@ export const ActivityIcon = (props: IconProps) => (
   </Svg>
 );
 
+/** The theme menu: a palette. */
+export const PaletteIcon = (props: IconProps) => (
+  <Svg {...props}>
+    <path d="M8 1.8a6.2 6.2 0 1 0 0 12.4c1 0 1.5-.6 1.5-1.3 0-.4-.2-.7-.4-1-.2-.3-.4-.6-.4-1 0-.7.6-1.2 1.3-1.2h1.5a2.7 2.7 0 0 0 2.7-2.7C14.2 4.3 11.4 1.8 8 1.8Z" />
+    <circle cx="4.9" cy="7.4" r="0.9" fill="currentColor" stroke="none" />
+    <circle cx="6.6" cy="4.6" r="0.9" fill="currentColor" stroke="none" />
+    <circle cx="9.9" cy="4.6" r="0.9" fill="currentColor" stroke="none" />
+  </Svg>
+);
+
+export const CheckIcon = (props: IconProps) => (
+  <Svg {...props}>
+    <path d="M3.2 8.4l3 3 6.6-6.8" />
+  </Svg>
+);
+
+/** A column's menu: three dots. */
+export const MoreIcon = (props: IconProps) => (
+  <Svg {...props}>
+    <circle cx="3.6" cy="8" r="1.1" fill="currentColor" stroke="none" />
+    <circle cx="8" cy="8" r="1.1" fill="currentColor" stroke="none" />
+    <circle cx="12.4" cy="8" r="1.1" fill="currentColor" stroke="none" />
+  </Svg>
+);
+
+/** A project: a folder. */
+export const FolderIcon = (props: IconProps) => (
+  <Svg {...props}>
+    <path d="M1.8 4.2c0-.6.5-1.1 1.1-1.1h3.2l1.5 1.6h5.5c.6 0 1.1.5 1.1 1.1v6.5c0 .6-.5 1.1-1.1 1.1H2.9c-.6 0-1.1-.5-1.1-1.1V4.2Z" />
+  </Svg>
+);
+
+export const TagIcon = (props: IconProps) => (
+  <Svg {...props}>
+    <path d="M2 2.6v4.3l6.6 6.6 4.9-4.9L6.9 2H2.6a.6.6 0 0 0-.6.6Z" />
+    <circle cx="5" cy="5" r="1" />
+  </Svg>
+);
+
 /** The CodeLead-AI mark (navy disc, the C in the blue to cyan gradient, the L in white), as the run report draws it. */
 export function BrandMark({ size = 26 }: { size?: number }) {
   return (

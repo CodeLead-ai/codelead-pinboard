@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { BoardPayload, CardSummary, ColumnInfo, NewCardInput } from "../../server/contract.js";
-import { BubbleIcon, CollapseIcon, ExpandIcon, FlagIcon, GearIcon, PlusIcon, TypeChip } from "./icons.js";
+import { BubbleIcon, CheckIcon, CloseIcon, CollapseIcon, ExpandIcon, FlagIcon, GearIcon, MoreIcon, PlusIcon, TypeChip } from "./icons.js";
 import { useMentionPicker } from "./Mentions.js";
 import {
   ago,
@@ -24,6 +24,8 @@ import {
 } from "./model.js";
 
 const CARD_TYPE = "application/x-pinboard-card";
+/** A drag of several picked cards: their keys, as JSON, beside the card dragged. */
+const CARDS_TYPE = "application/x-pinboard-cards";
 
 /** Where a dragged card would land: in this column, below that card (null: at the top). */
 interface DropPlace {
@@ -33,12 +35,12 @@ interface DropPlace {
 
 /**
  * The place under the pointer in a column: below the last tile whose middle the pointer has passed
- * (the dragged card itself left out), or the top.
+ * (the dragged cards themselves left out), or the top.
  */
-function placeAt(column: HTMLElement, clientY: number, dragged: string | null): string | null {
+function placeAt(column: HTMLElement, clientY: number, dragged: ReadonlySet<string>): string | null {
   let after: string | null = null;
   for (const tile of column.querySelectorAll<HTMLElement>(".column-body > .tile[data-card]")) {
-    if (tile.dataset.card === dragged) continue;
+    if (tile.dataset.card !== undefined && dragged.has(tile.dataset.card)) continue;
     const box = tile.getBoundingClientRect();
     if (clientY < box.top + box.height / 2) break;
     after = tile.dataset.card ?? null;
@@ -60,6 +62,18 @@ export interface BoardViewProps {
   onMoveCancel: () => void;
   /** A card dropped in a column, below `after` (null: at the top). */
   onDrop: (key: string, column: string, after: string | null) => void;
+  /** Several picked cards dropped together (one of them was dragged): their keys in the board's order. */
+  onDropMany: (keys: string[], column: string, after: string | null) => void;
+  /** The cards picked for a bulk change. */
+  picked: ReadonlySet<string>;
+  /** Cmd/Ctrl-click or the checkbox toggles a card; Shift-click extends the pick within its column (the column's shown keys, top first). */
+  onPick: (key: string, how: "toggle" | "extend", column: string[]) => void;
+  /** "Select all in this column" (its shown keys), or, with null, clear the pick. */
+  onPickColumn: (keys: string[] | null) => void;
+  /** The picked keys in the board's order (what a drag of the pick moves). */
+  pickedInOrder: string[];
+  /** The tags a new card starts with (the project shown), removable in the form. */
+  newCardTags: string[];
   composer: string | null;
   onCompose: (column: string | null) => void;
   onCreate: (input: NewCardInput) => Promise<boolean>;
@@ -76,12 +90,15 @@ export function BoardView(props: BoardViewProps) {
   const filtering = isFiltering(filter);
   const [place, setPlace] = useState<DropPlace | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
+  // The cards a drag carries: the dragged card, or every picked card when the dragged one is picked.
+  const [carried, setCarried] = useState<ReadonlySet<string>>(() => new Set());
+  const [menu, setMenu] = useState<string | null>(null);
   const shown = board.cards.filter((card) => onBoard(card, filter));
   const firstTile = board.columns.map((column) => columnCards(shown, column.id).find((card) => matches(card, filter))).find(Boolean);
   const tabStop = props.selected ?? (firstTile ? keyOf(firstTile.id) : null);
 
   return (
-    <main className="board" aria-label="The board's columns">
+    <main className={classes("board", props.picked.size > 0 && "board-picking")} aria-label="The board's columns">
       {board.columns.map((column) => {
         const cards = columnCards(shown, column.id);
         const matching = cards.filter((card) => matches(card, filter));
@@ -93,7 +110,7 @@ export function BoardView(props: BoardViewProps) {
             if (!event.dataTransfer.types.includes(CARD_TYPE)) return;
             event.preventDefault();
             event.dataTransfer.dropEffect = "move";
-            const after = collapsed ? null : placeAt(event.currentTarget, event.clientY, dragging);
+            const after = collapsed ? null : placeAt(event.currentTarget, event.clientY, carried);
             if (place?.column !== column.id || place.after !== after) setPlace({ column: column.id, after });
           },
           onDragLeave: (event: DragEvent<HTMLElement>) => {
@@ -101,12 +118,22 @@ export function BoardView(props: BoardViewProps) {
           },
           onDrop: (event: DragEvent<HTMLElement>) => {
             const key = event.dataTransfer.getData(CARD_TYPE);
-            const after = collapsed ? null : placeAt(event.currentTarget, event.clientY, key || dragging);
+            let many: string[] = [];
+            try {
+              const listed = JSON.parse(event.dataTransfer.getData(CARDS_TYPE) || "[]") as unknown;
+              if (Array.isArray(listed)) many = listed.filter((entry): entry is string => typeof entry === "string");
+            } catch {
+              many = [];
+            }
+            const moving = new Set(many.length > 0 ? many : key ? [key] : [...carried]);
+            const after = collapsed ? null : placeAt(event.currentTarget, event.clientY, moving);
             setPlace(null);
             setDragging(null);
+            setCarried(new Set());
             if (!key) return;
             event.preventDefault();
-            props.onDrop(key, column.id, after);
+            if (many.length > 1) props.onDropMany(many, column.id, after);
+            else props.onDrop(key, column.id, after);
           }
         };
         const label = columnLabel(column, matching.length, cards.length, filtering);
@@ -126,7 +153,8 @@ export function BoardView(props: BoardViewProps) {
         const note = COLUMN_NOTES[column.id];
         const overLimit = column.limit !== undefined && cards.length > column.limit;
         // The line that shows where the dragged card would land: above the first tile, or below the one it would follow.
-        const landing = over ? (place!.after ?? visible.find((card) => keyOf(card.id) !== dragging)?.id ?? null) : null;
+        const landing = over ? (place!.after ?? visible.find((card) => !carried.has(keyOf(card.id)))?.id ?? null) : null;
+        const shownKeys = visible.map((card) => keyOf(card.id));
         const landingSide = over && place!.after === null ? "before" : "after";
         return (
           <section
@@ -142,10 +170,40 @@ export function BoardView(props: BoardViewProps) {
                 <span className={classes("count", overLimit && "count-over")} data-testid={`count-${column.id}`}>
                   {label}
                 </span>
-                <span className="column-tools">
+                <span className={classes("column-tools", menu === column.id && "column-tools-open")}>
                   <button type="button" className="icon-button small" onClick={() => props.onCompose(column.id)} aria-label={`New card in ${column.name}`} title={`New card in ${column.name}`}>
                     <PlusIcon size={14} />
                   </button>
+                  <span className="column-menu-wrap">
+                    <button
+                      type="button"
+                      className="icon-button small"
+                      onClick={() => setMenu(menu === column.id ? null : column.id)}
+                      aria-haspopup="menu"
+                      aria-expanded={menu === column.id}
+                      aria-label={`More for ${column.name}`}
+                      title={`More for ${column.name}`}
+                      data-testid={`column-menu-${column.id}`}
+                    >
+                      <MoreIcon size={14} />
+                    </button>
+                    {menu === column.id ? (
+                      <ColumnMenu
+                        column={column}
+                        count={shownKeys.length}
+                        picking={props.picked.size > 0}
+                        onSelectAll={() => {
+                          setMenu(null);
+                          props.onPickColumn(shownKeys);
+                        }}
+                        onClear={() => {
+                          setMenu(null);
+                          props.onPickColumn(null);
+                        }}
+                        onClose={() => setMenu(null)}
+                      />
+                    ) : null}
+                  </span>
                   <button type="button" className="icon-button small" onClick={() => props.onCollapse(column.id)} aria-label={`Collapse ${column.name}`} title={`Collapse ${column.name} to its name and count`}>
                     <CollapseIcon size={14} />
                   </button>
@@ -154,7 +212,7 @@ export function BoardView(props: BoardViewProps) {
               {note ? <p className="column-note">{note}</p> : null}
             </header>
             <div className="column-body">
-              {props.composer === column.id ? <Composer board={board} column={column} onCancel={() => props.onCompose(null)} onCreate={props.onCreate} /> : null}
+              {props.composer === column.id ? <Composer board={board} column={column} tags={props.newCardTags} onCancel={() => props.onCompose(null)} onCreate={props.onCreate} /> : null}
               {visible.map((card) => {
                 const key = keyOf(card.id);
                 return (
@@ -164,23 +222,29 @@ export function BoardView(props: BoardViewProps) {
                     card={card}
                     faded={filtering && !matching.includes(card)}
                     selected={props.selected === key}
+                    picked={props.picked.has(key)}
                     tabStop={tabStop === key}
                     unseen={props.unseen[key] ?? 0}
                     addressed={props.addressed[key] ?? 0}
                     flash={props.flashed.has(key)}
-                    dragging={dragging === key}
+                    dragging={dragging === key || (dragging !== null && carried.has(key))}
                     landing={landing !== null && String(landing) === key ? landingSide : undefined}
                     now={props.now}
                     onSelect={() => props.onSelect(key)}
                     onOpen={() => props.onOpen(key)}
+                    onPick={(how) => props.onPick(key, how, shownKeys)}
                     onDragStart={(event) => {
+                      const many = props.picked.has(key) && props.picked.size > 1 ? props.pickedInOrder : [key];
                       event.dataTransfer.setData(CARD_TYPE, key);
-                      event.dataTransfer.setData("text/plain", `#${key}`);
+                      if (many.length > 1) event.dataTransfer.setData(CARDS_TYPE, JSON.stringify(many));
+                      event.dataTransfer.setData("text/plain", many.map((entry) => `#${entry}`).join(" "));
                       event.dataTransfer.effectAllowed = "move";
                       setDragging(key);
+                      setCarried(new Set(many));
                     }}
                     onDragEnd={() => {
                       setDragging(null);
+                      setCarried(new Set());
                       setPlace(null);
                     }}
                     register={(element) => {
@@ -208,6 +272,8 @@ interface TileProps {
   card: CardSummary;
   faded: boolean;
   selected: boolean;
+  /** Picked for a bulk change: a ticked box and a ring. */
+  picked: boolean;
   tabStop: boolean;
   unseen: number;
   /** How many of the unseen events address the person (a mention of them in a comment or a description). */
@@ -219,6 +285,7 @@ interface TileProps {
   now: number;
   onSelect: () => void;
   onOpen: () => void;
+  onPick: (how: "toggle" | "extend") => void;
   onDragStart: (event: DragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
   register: (element: HTMLElement | null) => void;
@@ -237,7 +304,7 @@ function Tag({ tag }: { tag: string }) {
   return <span className={classes("chip", tag.startsWith("by:") && "chip-by")}>{tag}</span>;
 }
 
-function Tile({ board, card, faded, selected, tabStop, unseen, addressed, flash, dragging, landing, now, onSelect, onOpen, onDragStart, onDragEnd, register, children }: TileProps) {
+function Tile({ board, card, faded, selected, picked, tabStop, unseen, addressed, flash, dragging, landing, now, onSelect, onOpen, onPick, onDragStart, onDragEnd, register, children }: TileProps) {
   const key = keyOf(card.id);
   const workingName = card.working ? participantName(board, card.working.by) : "";
   const colorName = colorNameOf(board, card.color);
@@ -257,6 +324,7 @@ function Tile({ board, card, faded, selected, tabStop, unseen, addressed, flash,
         card.proposal && "tile-proposal",
         faded && "tile-faded",
         selected && "tile-selected",
+        picked && "tile-picked",
         flash && "tile-flash",
         dragging && "tile-dragging",
         card.archived && "tile-archived",
@@ -266,12 +334,19 @@ function Tile({ board, card, faded, selected, tabStop, unseen, addressed, flash,
       )}
       role="button"
       tabIndex={tabStop ? 0 : -1}
-      aria-label={`#${key} ${card.type}: ${card.title}${colorName ? `, marked ${colorName}` : ""}${unseen > 0 ? `, ${unseen} new` : ""}${addressed > 0 ? ", addressed to you" : ""}`}
+      aria-label={`#${key} ${card.type}: ${card.title}${colorName ? `, marked ${colorName}` : ""}${unseen > 0 ? `, ${unseen} new` : ""}${addressed > 0 ? ", addressed to you" : ""}${picked ? ", selected" : ""}`}
       aria-describedby={describedBy || undefined}
       draggable
       data-card={key}
       onFocus={onSelect}
-      onClick={() => {
+      onClick={(event) => {
+        // Cmd/Ctrl-click picks the card for a bulk change, Shift-click extends the pick in the column; a plain click opens it.
+        if (event.metaKey || event.ctrlKey || event.shiftKey) {
+          event.preventDefault();
+          onSelect();
+          onPick(event.shiftKey ? "extend" : "toggle");
+          return;
+        }
         onSelect();
         onOpen();
       }}
@@ -279,6 +354,21 @@ function Tile({ board, card, faded, selected, tabStop, unseen, addressed, flash,
       onDragEnd={onDragEnd}
     >
       <div className="tile-top">
+        <span
+          className={classes("tile-pick", picked && "on")}
+          role="checkbox"
+          aria-checked={picked}
+          aria-label={`Select #${key}`}
+          title={picked ? `#${key} is selected (x, or Cmd/Ctrl-click, to unselect)` : `Select #${key} (x, or Cmd/Ctrl-click)`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelect();
+            onPick(event.shiftKey ? "extend" : "toggle");
+          }}
+          data-testid="tile-pick"
+        >
+          {picked ? <CheckIcon size={13} /> : null}
+        </span>
         <TypeChip type={card.type} types={board.types} size={12} />
         <span className="tile-type">{card.type}</span>
         {card.proposal ? (
@@ -287,6 +377,7 @@ function Tile({ board, card, faded, selected, tabStop, unseen, addressed, flash,
           </span>
         ) : null}
         {card.archived ? <span className="tile-proposed">archived</span> : null}
+        <span className="tile-top-end">
         <span className="tile-id">#{key}</span>
         {addressed > 0 ? (
           <span className="tile-mention" title={`Addressed to you since you last looked${addressed > 1 ? ` (${addressed} times)` : ""}: a comment or the description mentions you`} aria-hidden="true" data-testid="tile-mention">
@@ -294,6 +385,7 @@ function Tile({ board, card, faded, selected, tabStop, unseen, addressed, flash,
           </span>
         ) : null}
         {unseen > 0 ? <span className="tile-unseen" title={`${unseen} new since you last looked`} aria-hidden="true" /> : null}
+        </span>
       </div>
       <h3 className="tile-title">{card.title}</h3>
       {ask ? (
@@ -354,6 +446,45 @@ function Tile({ board, card, faded, selected, tabStop, unseen, addressed, flash,
       {card.color ? <span className="tile-color" style={{ "--card-color": card.color } as CSSProperties} title={`Colour: ${colorName ?? card.color}`} data-testid="tile-color" data-color={card.color} /> : null}
       {children}
     </article>
+  );
+}
+
+/** A column's menu (its ⋯): select every card it shows, or clear the selection. */
+function ColumnMenu({ column, count, picking, onSelectAll, onClear, onClose }: { column: ColumnInfo; count: number; picking: boolean; onSelectAll: () => void; onClear: () => void; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.querySelector<HTMLElement>("[role='menuitem']:not(:disabled)")?.focus();
+    const away = (event: PointerEvent): void => {
+      if (ref.current && !ref.current.parentElement?.contains(event.target as Node)) onClose();
+    };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [onClose]);
+  return (
+    <div
+      ref={ref}
+      className="popover column-menu"
+      role="menu"
+      aria-label={`${column.name}: more`}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          onClose();
+        }
+      }}
+    >
+      <button type="button" role="menuitem" className="menu-item" onClick={onSelectAll} disabled={count === 0} data-testid={`select-column-${column.id}`}>
+        <CheckIcon size={14} />
+        Select all in this column{count > 0 ? ` (${count})` : ""}
+      </button>
+      {picking ? (
+        <button type="button" role="menuitem" className="menu-item" onClick={onClear}>
+          <CloseIcon size={13} />
+          Clear the selection
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -422,7 +553,9 @@ function MovePicker({ board, card, onPick, onCancel }: { board: BoardPayload; ca
 }
 
 /** A new card, written in place (`n`, or the + of a column): type, title, description; it lands in this column. */
-function Composer({ board, column, onCancel, onCreate }: { board: BoardPayload; column: ColumnInfo; onCancel: () => void; onCreate: (input: NewCardInput) => Promise<boolean> }) {
+function Composer({ board, column, tags: startTags, onCancel, onCreate }: { board: BoardPayload; column: ColumnInfo; tags: string[]; onCancel: () => void; onCreate: (input: NewCardInput) => Promise<boolean> }) {
+  // The project shown gives a new card its tag; the person can take it off before creating the card.
+  const [tags, setTags] = useState<string[]>(startTags);
   const [type, setType] = useState(() => {
     try {
       const last = localStorage.getItem("pinboard.newType");
@@ -451,7 +584,7 @@ function Composer({ board, column, onCancel, onCreate }: { board: BoardPayload; 
     } catch {
       // No storage: nothing to remember.
     }
-    const done = await onCreate({ type, title: title.trim(), column: column.id, ...(description.trim() !== "" ? { description } : {}) });
+    const done = await onCreate({ type, title: title.trim(), column: column.id, ...(description.trim() !== "" ? { description } : {}), ...(tags.length > 0 ? { tags } : {}) });
     setBusy(false);
     if (done) onCancel();
   };
@@ -483,6 +616,18 @@ function Composer({ board, column, onCancel, onCreate }: { board: BoardPayload; 
         </label>
         <span className="composer-where">new card in {column.name}</span>
       </div>
+      {tags.length > 0 ? (
+        <div className="composer-tags" data-testid="composer-tags">
+          {tags.map((tag) => (
+            <span key={tag} className="chip chip-chosen">
+              {tag}
+              <button type="button" className="chip-x" onClick={() => setTags((current) => current.filter((entry) => entry !== tag))} aria-label={`Do not tag the new card ${tag}`} title={`Do not tag it ${tag}`}>
+                <CloseIcon size={11} />
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
       <input ref={titleRef} className="field-input" placeholder="Title" value={title} onChange={(event) => setTitle(event.target.value)} aria-label="Title" />
       <div className="mention-host">
         <textarea

@@ -15,6 +15,8 @@ export interface PanelActions {
   comment: (id: string, body: string, expectUpdated: string, moveTo?: string) => Promise<string | null>;
   move: (id: string, to: string, expectUpdated: string) => Promise<string | null>;
   archive: (id: string) => void;
+  /** Brings an archived card back to the board (its column), as the person. */
+  unarchive: (id: string) => void;
   openRelated: (id: string) => void;
   back: () => void;
   crumb: (index: number) => void;
@@ -288,7 +290,14 @@ export function CardPanel({ board, id, detail, error, below, crumbs, cards, know
                 This card's file has problems, so writes to it are refused until they are fixed: {detail.problems.join("; ")}. `codelead board validate` lists them.
               </p>
             ) : null}
-            {card.archived ? <p className="banner">Archived {clock(card.archived, now)}: off the board, kept in its file.</p> : null}
+            {card.archived ? (
+              <p className="banner banner-archived">
+                Archived {clock(card.archived, now)}: off the board, kept in its file.{" "}
+                <button type="button" className="text-button" onClick={() => actions.unarchive(id)} data-testid="unarchive">
+                  Bring it back to the board
+                </button>
+              </p>
+            ) : null}
 
             <Section title="Description" testId="panel-description">
               <EditableText

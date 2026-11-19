@@ -1,4 +1,6 @@
 import type {
+  BatchInput,
+  BatchPayload,
   BoardPayload,
   CardChangesInput,
   CardDetail,
@@ -6,6 +8,8 @@ import type {
   MoveInput,
   NewCardInput,
   NotificationsPayload,
+  PreferencesDocument,
+  PreferencesPayload,
   RefusalPayload,
   WritePayload
 } from "../../server/contract.js";
@@ -70,6 +74,11 @@ export const api = {
   },
   archive: (id: CardId, expectUpdated?: string): Promise<WritePayload> => call("POST", `${item(id)}/archive`, { expectUpdated }),
   notifications: (): Promise<NotificationsPayload> => call("GET", "api/notifications"),
+  /** The board's view preferences on this machine (the theme and background, by default and per project). */
+  preferences: (): Promise<PreferencesPayload> => call("GET", "api/preferences"),
+  savePreferences: (preferences: PreferencesDocument): Promise<PreferencesPayload> => call("PUT", "api/preferences", preferences),
+  /** One operation on several cards: each card's write its own; a refusal is that card's alone. */
+  batch: (input: BatchInput): Promise<BatchPayload> => call("POST", "api/cards/batch", input),
   clearAll: (): Promise<NotificationsPayload> => call("POST", "api/check/ack", {})
 };
 

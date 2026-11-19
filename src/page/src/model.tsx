@@ -14,14 +14,13 @@ export interface Filter {
   type: string;
   /** Every one of these tags. */
   tags: string[];
-  repo: string;
   /** "hide" removes the cards that do not match; "fade" dims them. */
   show: "fade" | "hide";
   /** Show archived cards too. */
   archived: boolean;
 }
 
-export const EMPTY_FILTER: Filter = { q: "", column: "", type: "", tags: [], repo: "", show: "fade", archived: false };
+export const EMPTY_FILTER: Filter = { q: "", column: "", type: "", tags: [], show: "fade", archived: false };
 
 export function readFilter(search: string): Filter {
   const query = new URLSearchParams(search);
@@ -30,7 +29,6 @@ export function readFilter(search: string): Filter {
     column: query.get("column") ?? "",
     type: query.get("type") ?? "",
     tags: query.getAll("tag").filter((tag) => tag !== ""),
-    repo: query.get("repo") ?? "",
     show: query.get("show") === "hide" ? "hide" : "fade",
     archived: query.get("archived") === "1"
   };
@@ -41,13 +39,14 @@ export function readStack(search: string): string[] {
   return new URLSearchParams(search).getAll("card").filter((id) => id !== "");
 }
 
-export function writeQuery(filter: Filter, stack: string[]): string {
+/** The address's query: the project shown (`project`; the first page's `repo` is read as one), the filter, the open cards. */
+export function writeQuery(filter: Filter, stack: string[], project = ""): string {
   const query = new URLSearchParams();
+  if (project !== "") query.set("project", project);
   if (filter.q.trim() !== "") query.set("q", filter.q);
   if (filter.column) query.set("column", filter.column);
   if (filter.type) query.set("type", filter.type);
   for (const tag of filter.tags) query.append("tag", tag);
-  if (filter.repo) query.set("repo", filter.repo);
   if (filter.show === "hide") query.set("show", "hide");
   if (filter.archived) query.set("archived", "1");
   for (const id of stack) query.append("card", id);
@@ -57,7 +56,7 @@ export function writeQuery(filter: Filter, stack: string[]): string {
 
 /** True when any part of the filter narrows the board (fade/hide and archived alone do not). */
 export function isFiltering(filter: Filter): boolean {
-  return filter.q.trim() !== "" || filter.column !== "" || filter.type !== "" || filter.tags.length > 0 || filter.repo !== "";
+  return filter.q.trim() !== "" || filter.column !== "" || filter.type !== "" || filter.tags.length > 0;
 }
 
 export function keyOf(id: CardId): string {
@@ -68,7 +67,6 @@ export function matches(card: CardSummary, filter: Filter): boolean {
   if (filter.column && card.column !== filter.column) return false;
   if (filter.type && card.type !== filter.type) return false;
   if (filter.tags.length > 0 && !filter.tags.every((tag) => card.tags.includes(tag))) return false;
-  if (filter.repo && !card.tags.includes(`repo:${filter.repo}`)) return false;
   const q = filter.q.trim().toLowerCase();
   if (q !== "") {
     const asId = /^#?([A-Za-z0-9][A-Za-z0-9._-]*)$/.exec(q);
@@ -156,13 +154,6 @@ export function colorNameOf(board: BoardPayload, hex: string | undefined): strin
   return hex === undefined ? undefined : (board.colors.find((color) => color.hex === hex)?.name ?? hex);
 }
 
-/** The repositories named by `repo:` tags, for the repository filter. */
-export function repositoriesOf(cards: CardSummary[]): string[] {
-  const names = new Set<string>();
-  for (const card of cards) for (const tag of card.tags) if (tag.startsWith("repo:") && tag.length > 5) names.add(tag.slice(5));
-  return [...names].sort((left, right) => left.localeCompare(right));
-}
-
 export interface TagGroup {
   name: string;
   /** True for a namespace board.json reserves (area:, by:, …). */
@@ -171,8 +162,8 @@ export interface TagGroup {
 }
 
 /**
- * The tags of the board for the tag filter, grouped: the reserved namespaces first (repo: has its
- * own filter), then the other namespaces, then the plain tags.
+ * The tags of the board for the tag filter, grouped: the reserved namespaces first (repo: is the
+ * project selector's), then the other namespaces, then the plain tags.
  */
 export function tagGroups(cards: CardSummary[], reserved: string[]): TagGroup[] {
   const byGroup = new Map<string, Set<string>>();

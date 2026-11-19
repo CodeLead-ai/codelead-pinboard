@@ -1,16 +1,37 @@
 /*
- * Pinboard. The CodeLead-AI palette: navy ink on a cool paper ground (light), the run report's
- * navy ground (dark), the blue to cyan of the mark highlights CodeLead cards and what is new since you
- * last looked (the capsule, the dot on a card and its "@you", the dot of a notification line). Everything else is
- * ink, lines and quiet fills. Bricolage Grotesque for headings, IBM Plex Sans for reading, IBM Plex
- * Mono for ids, counts, paths and times; the fallbacks keep the page whole offline.
+ * Pinboard. Ten themes, each a complete set of the custom properties below (no colour is written
+ * outside them): four light (Paper, Linen, Frost, Sage), four dark (Navy, Pitch, Dusk, Ember) and two
+ * high contrast (7:1 text, 3:1 control edges). Paper and Navy are the CodeLead-AI palette the page
+ * always had: navy ink on a cool paper ground, the run report's navy ground; the blue to cyan of the
+ * mark highlights CodeLead cards and what is new since you last looked.
+ *
+ * Each theme reads in its own face (`--font-body`, `--font-display`); every theme uses the same sizes
+ * and line heights, written once below, so a change of theme never changes how big the text is. The
+ * page's own faces are bundled (fonts.css): it reads the same with no network.
+ *
+ * `data-theme` on the root names the theme the page shows (App.tsx resolves "System" to the person's
+ * light or dark theme); without it (before the page's script runs) the system's light or dark picks
+ * Paper or Navy. `[data-theme-scope]` gives one element a theme's tokens (the theme menu's swatches).
  */
 
 :root {
+  --text-size: 14px;
+  --text-leading: 1.5;
+  --radius: 10px;
+  /* The board's backdrop and the text drawn on it: the theme's own, unless the person picked a background (App.tsx). */
+  --board-bg: var(--ground);
+  --board-ink: var(--ink);
+  --board-muted: var(--muted);
+}
+
+:root,
+:root[data-theme="paper"],
+[data-theme-scope="paper"] {
   color-scheme: light;
   --ground: #f3f6fb;
   --ground-2: #e8eef6;
   --well: rgba(220, 229, 241, 0.62);
+  --well-line: transparent;
   --surface: #ffffff;
   --surface-2: #f6f8fc;
   --line: #dce3ee;
@@ -18,7 +39,6 @@
   --ink: #0b1630;
   --ink-2: #31405c;
   --muted: #5b6b86;
-  /* Small labels, ages and hints: 4.5:1 on the surface, as small text needs. */
   --faint: #66738b;
   --dot: rgba(11, 22, 48, 0.075);
   --accent-a: #1e5eff;
@@ -35,6 +55,7 @@
   --shadow: 0 1px 0 rgba(11, 22, 48, 0.035), 0 1px 3px rgba(11, 22, 48, 0.07);
   --shadow-lift: 0 14px 34px -14px rgba(11, 22, 48, 0.32), 0 2px 6px rgba(11, 22, 48, 0.07);
   --panel-shadow: -28px 0 64px -24px rgba(11, 22, 48, 0.38);
+  --shadow-press: 0 6px 16px -8px rgba(11, 22, 48, 0.6);
   --hue0-bg: #ebeaff;
   --hue0-fg: #3a32a6;
   --hue1-bg: #e1f4ef;
@@ -47,24 +68,61 @@
   --hue4-fg: #2c662c;
   --hue5-bg: #f2e8fa;
   --hue5-fg: #692b90;
-  /* A decision's ask: the decision's coyote brown as its rule, 6% of it as its ground (ink-2 on it 9.67:1, the label 6.14:1). */
   --ask-rule: #936744;
   --ask-bg: #f9f6f4;
   --ask-ink: #7a5536;
-  /* The ring that keeps a colour mark's edge on the tile (the yellow is 1.44:1 on white). */
+  --ask-border: #ccc8c9;
   --mark-ring: rgba(11, 22, 48, 0.24);
-  --font-display: "Bricolage Grotesque", "Avenir Next Condensed", "Helvetica Neue", "Arial Narrow", system-ui, sans-serif;
+  --type-taupe-bg: #8d837b;
+  --type-taupe-fg: #0b1630;
+  --type-taupe-ring: rgba(11, 22, 48, 0.12);
+  --type-sand-bg: #c8bdac;
+  --type-sand-fg: #0b1630;
+  --type-sand-ring: rgba(11, 22, 48, 0.12);
+  --type-khaki-bg: #aea489;
+  --type-khaki-fg: #0b1630;
+  --type-khaki-ring: rgba(11, 22, 48, 0.12);
+  --type-slate-bg: #777e90;
+  --type-slate-fg: #0b1630;
+  --type-slate-ring: rgba(11, 22, 48, 0.12);
+  --type-brown-bg: #936744;
+  --type-brown-fg: #0b1630;
+  --type-brown-ring: rgba(11, 22, 48, 0.12);
+  --type-plain-bg: #dce3ee;
+  --type-plain-fg: #31405c;
+  --type-plain-ring: rgba(11, 22, 48, 0.12);
+  --capsule-a: #1e5eff;
+  --capsule-b: #1b66f2;
+  --capsule-c: #1d72e6;
+  --capsule-ink: #ffffff;
+  --capsule-ring: rgba(79, 208, 255, 0.55);
+  --capsule-glow: rgba(30, 94, 255, 0.85);
+  --codelead-ink: #1652e0;
+  --codelead-soft: rgba(30, 94, 255, 0.14);
+  --backdrop: rgba(6, 11, 24, 0.45);
+  --brand-ring: transparent;
+  --well-drop: rgba(238, 242, 248, 0.772);
+  --well-solid: #e5ebf5;
+  --panel-bar-bg: rgba(255, 255, 255, 0.97);
+  --pick: #1e5eff;
+  --pick-ink: #ffffff;
+  --pick-surface: #ebf1ff;
+  --ink-on-light: #0b1630;
+  --ink-on-dark: #f4f7fb;
+  --muted-on-light: #3d4b66;
+  --muted-on-dark: #c3cee0;
   --font-body: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque", "Avenir Next Condensed", "Helvetica Neue", "Arial Narrow", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  --radius: 10px;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
+  :root:not([data-theme]) {
     color-scheme: dark;
     --ground: #060b18;
     --ground-2: #0a1222;
     --well: rgba(13, 21, 38, 0.72);
+    --well-line: transparent;
     --surface: #0d1526;
     --surface-2: #111c31;
     --line: #1b2740;
@@ -74,6 +132,8 @@
     --muted: #8fa0bc;
     --faint: #7787a3;
     --dot: rgba(232, 238, 248, 0.05);
+    --accent-a: #1e5eff;
+    --accent-b: #38c6ff;
     --accent-ink: #62cbff;
     --accent-soft: rgba(56, 198, 255, 0.16);
     --focus: #f4f7fb;
@@ -86,6 +146,7 @@
     --shadow: 0 1px 0 rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.35);
     --shadow-lift: 0 18px 40px -16px rgba(0, 0, 0, 0.8), 0 2px 8px rgba(0, 0, 0, 0.45);
     --panel-shadow: -30px 0 72px -22px rgba(0, 0, 0, 0.8);
+    --shadow-press: 0 6px 16px -8px rgba(11, 22, 48, 0.6);
     --hue0-bg: #211e4a;
     --hue0-fg: #c2bdff;
     --hue1-bg: #0d2c27;
@@ -98,17 +159,335 @@
     --hue4-fg: #a5daa5;
     --hue5-bg: #2a1836;
     --hue5-fg: #d8b3f0;
+    --ask-rule: #936744;
     --ask-bg: #1d1f2a;
     --ask-ink: #c9a07c;
+    --ask-border: #353541;
     --mark-ring: rgba(232, 238, 248, 0.32);
+    --type-taupe-bg: #1f2432;
+    --type-taupe-fg: #8d837b;
+    --type-taupe-ring: rgba(141, 131, 123, 0.34);
+    --type-sand-bg: #272d39;
+    --type-sand-fg: #c8bdac;
+    --type-sand-ring: rgba(200, 189, 172, 0.34);
+    --type-khaki-bg: #242934;
+    --type-khaki-fg: #aea489;
+    --type-khaki-ring: rgba(174, 164, 137, 0.34);
+    --type-slate-bg: #1c2435;
+    --type-slate-fg: #777e90;
+    --type-slate-ring: rgba(119, 126, 144, 0.34);
+    --type-brown-bg: #20202a;
+    --type-brown-fg: #936744;
+    --type-brown-ring: rgba(147, 103, 68, 0.34);
+    --type-plain-bg: #262f40;
+    --type-plain-fg: #c3cee0;
+    --type-plain-ring: rgba(195, 206, 224, 0.34);
+    --capsule-a: #1e5eff;
+    --capsule-b: #1b66f2;
+    --capsule-c: #1d72e6;
+    --capsule-ink: #ffffff;
+    --capsule-ring: rgba(79, 208, 255, 0.55);
+    --capsule-glow: rgba(30, 94, 255, 0.85);
+    --codelead-ink: #62cbff;
+    --codelead-soft: rgba(56, 198, 255, 0.16);
+    --backdrop: rgba(6, 11, 24, 0.45);
+    --brand-ring: #2a3a5a;
+    --well-drop: rgba(13, 21, 38, 0.832);
+    --well-solid: #0b1222;
+    --panel-bar-bg: rgba(13, 21, 38, 0.97);
+    --pick: #4f9dff;
+    --pick-ink: #060b18;
+    --pick-surface: #182b49;
+    --ink-on-light: #0b1630;
+    --ink-on-dark: #e8eef8;
+    --muted-on-light: #3d4b66;
+    --muted-on-dark: #c3cee0;
+    --font-body: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --font-display: "Bricolage Grotesque", "Avenir Next Condensed", "Helvetica Neue", "Arial Narrow", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
 }
 
-:root[data-theme="dark"] {
+:root[data-theme="linen"],
+[data-theme-scope="linen"] {
+  color-scheme: light;
+  --ground: #f4eee3;
+  --ground-2: #ebe3d5;
+  --well: rgba(231, 219, 199, 0.55);
+  --well-line: transparent;
+  --surface: #fffcf6;
+  --surface-2: #f8f2e8;
+  --line: #e5dac7;
+  --line-2: #d0c0a5;
+  --ink: #2b1d10;
+  --ink-2: #4d3b28;
+  --muted: #6c5843;
+  --faint: #745f4a;
+  --dot: rgba(43, 29, 16, 0.07);
+  --accent-a: #b4531c;
+  --accent-b: #e39a3b;
+  --accent-ink: #9a4210;
+  --accent-soft: rgba(180, 83, 28, 0.13);
+  --focus: #2b1d10;
+  --ok: #2e6b36;
+  --warn: #875000;
+  --warn-bg: #fbeed6;
+  --danger: #a6311f;
+  --danger-bg: #fbe6df;
+  --flash: rgba(180, 83, 28, 0.07);
+  --shadow: 0 1px 0 rgba(43, 29, 16, 0.04), 0 1px 3px rgba(43, 29, 16, 0.08);
+  --shadow-lift: 0 14px 34px -14px rgba(43, 29, 16, 0.3), 0 2px 6px rgba(43, 29, 16, 0.07);
+  --panel-shadow: -28px 0 64px -24px rgba(43, 29, 16, 0.34);
+  --shadow-press: 0 6px 16px -8px rgba(43, 29, 16, 0.55);
+  --hue0-bg: #eee8fb;
+  --hue0-fg: #4b3a99;
+  --hue1-bg: #e3f1e8;
+  --hue1-fg: #1f5e3a;
+  --hue2-bg: #f8ebcf;
+  --hue2-fg: #774705;
+  --hue3-bg: #f9e3e3;
+  --hue3-fg: #94252e;
+  --hue4-bg: #e8eed9;
+  --hue4-fg: #3d581a;
+  --hue5-bg: #f3e6f2;
+  --hue5-fg: #6d2969;
+  --ask-rule: #936744;
+  --ask-bg: #f7efe5;
+  --ask-ink: #764f2f;
+  --ask-border: #d3c1aa;
+  --mark-ring: rgba(43, 29, 16, 0.26);
+  --type-taupe-bg: #8d837b;
+  --type-taupe-fg: #2b1d10;
+  --type-taupe-ring: rgba(43, 29, 16, 0.12);
+  --type-sand-bg: #c8bdac;
+  --type-sand-fg: #2b1d10;
+  --type-sand-ring: rgba(43, 29, 16, 0.12);
+  --type-khaki-bg: #aea489;
+  --type-khaki-fg: #2b1d10;
+  --type-khaki-ring: rgba(43, 29, 16, 0.12);
+  --type-slate-bg: #777e90;
+  --type-slate-fg: #2b1d10;
+  --type-slate-ring: rgba(43, 29, 16, 0.12);
+  --type-brown-bg: #936744;
+  --type-brown-fg: #2b1d10;
+  --type-brown-ring: rgba(43, 29, 16, 0.12);
+  --type-plain-bg: #e5dac7;
+  --type-plain-fg: #4d3b28;
+  --type-plain-ring: rgba(43, 29, 16, 0.12);
+  --capsule-a: #a84d18;
+  --capsule-b: #9f4815;
+  --capsule-c: #964312;
+  --capsule-ink: #ffffff;
+  --capsule-ring: rgba(227, 154, 59, 0.6);
+  --capsule-glow: rgba(168, 77, 24, 0.7);
+  --codelead-ink: #1d54c4;
+  --codelead-soft: rgba(29, 84, 196, 0.11);
+  --backdrop: rgba(43, 29, 16, 0.42);
+  --brand-ring: transparent;
+  --well-drop: rgba(244, 237, 225, 0.73);
+  --well-solid: #ede4d4;
+  --panel-bar-bg: rgba(255, 252, 246, 0.97);
+  --pick: #a84d18;
+  --pick-ink: #ffffff;
+  --pick-surface: #f7ece2;
+  --ink-on-light: #2b1d10;
+  --ink-on-dark: #fbf3e6;
+  --muted-on-light: #4d3b28;
+  --muted-on-dark: #e6d8c3;
+  --font-body: Charter, "Bitstream Charter", "Sitka Text", Cambria, serif;
+  --font-display: var(--font-body);
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+:root[data-theme="frost"],
+[data-theme-scope="frost"] {
+  color-scheme: light;
+  --ground: #eaf1f5;
+  --ground-2: #dfe8ee;
+  --well: rgba(207, 223, 233, 0.6);
+  --well-line: transparent;
+  --surface: #fbfdfe;
+  --surface-2: #eff5f8;
+  --line: #d2dfe7;
+  --line-2: #b4c7d3;
+  --ink: #0d2733;
+  --ink-2: #284653;
+  --muted: #4a6672;
+  --faint: #4e6976;
+  --dot: rgba(13, 39, 51, 0.07);
+  --accent-a: #0a6fb8;
+  --accent-b: #19b5c9;
+  --accent-ink: #075d9b;
+  --accent-soft: rgba(10, 111, 184, 0.13);
+  --focus: #0d2733;
+  --ok: #146d4d;
+  --warn: #825000;
+  --warn-bg: #fbf0dc;
+  --danger: #ad2828;
+  --danger-bg: #fce9e9;
+  --flash: rgba(25, 181, 201, 0.08);
+  --shadow: 0 1px 0 rgba(13, 39, 51, 0.035), 0 1px 3px rgba(13, 39, 51, 0.08);
+  --shadow-lift: 0 14px 34px -14px rgba(13, 39, 51, 0.3), 0 2px 6px rgba(13, 39, 51, 0.07);
+  --panel-shadow: -28px 0 64px -24px rgba(13, 39, 51, 0.36);
+  --shadow-press: 0 6px 16px -8px rgba(13, 39, 51, 0.55);
+  --hue0-bg: #e6ebfd;
+  --hue0-fg: #33449e;
+  --hue1-bg: #daf2f0;
+  --hue1-fg: #0a5e58;
+  --hue2-bg: #fbefd6;
+  --hue2-fg: #784a06;
+  --hue3-bg: #fbe5ec;
+  --hue3-fg: #93284c;
+  --hue4-bg: #e1f1e3;
+  --hue4-fg: #275d2d;
+  --hue5-bg: #eee8fa;
+  --hue5-fg: #5a3594;
+  --ask-rule: #8f6747;
+  --ask-bg: #f6f3f0;
+  --ask-ink: #74512f;
+  --ask-border: #c3c5c4;
+  --mark-ring: rgba(13, 39, 51, 0.24);
+  --type-taupe-bg: #8d837b;
+  --type-taupe-fg: #0d2733;
+  --type-taupe-ring: rgba(13, 39, 51, 0.12);
+  --type-sand-bg: #c8bdac;
+  --type-sand-fg: #0d2733;
+  --type-sand-ring: rgba(13, 39, 51, 0.12);
+  --type-khaki-bg: #aea489;
+  --type-khaki-fg: #0d2733;
+  --type-khaki-ring: rgba(13, 39, 51, 0.12);
+  --type-slate-bg: #777e90;
+  --type-slate-fg: #0d2733;
+  --type-slate-ring: rgba(13, 39, 51, 0.12);
+  --type-brown-bg: #936744;
+  --type-brown-fg: #0d2733;
+  --type-brown-ring: rgba(13, 39, 51, 0.12);
+  --type-plain-bg: #d2dfe7;
+  --type-plain-fg: #284653;
+  --type-plain-ring: rgba(13, 39, 51, 0.12);
+  --capsule-a: #0a6fb8;
+  --capsule-b: #0a67ab;
+  --capsule-c: #095f9e;
+  --capsule-ink: #ffffff;
+  --capsule-ring: rgba(25, 181, 201, 0.55);
+  --capsule-glow: rgba(10, 111, 184, 0.75);
+  --codelead-ink: #1652c4;
+  --codelead-soft: rgba(22, 82, 196, 0.12);
+  --backdrop: rgba(13, 39, 51, 0.42);
+  --brand-ring: transparent;
+  --well-drop: rgba(230, 239, 244, 0.76);
+  --well-solid: #dae6ee;
+  --panel-bar-bg: rgba(251, 253, 254, 0.97);
+  --pick: #0a6fb8;
+  --pick-ink: #ffffff;
+  --pick-surface: #e5f0f8;
+  --ink-on-light: #0d2733;
+  --ink-on-dark: #f2f8fb;
+  --muted-on-light: #284653;
+  --muted-on-dark: #cfe0e8;
+  --font-body: "Trebuchet MS", "Lucida Grande", "Lucida Sans Unicode", "DejaVu Sans", sans-serif;
+  --font-display: var(--font-body);
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+:root[data-theme="sage"],
+[data-theme-scope="sage"] {
+  color-scheme: light;
+  --ground: #dde3da;
+  --ground-2: #d4dbd0;
+  --well: rgba(198, 208, 192, 0.55);
+  --well-line: transparent;
+  --surface: #eef1eb;
+  --surface-2: #e5e9e1;
+  --line: #cbd3c5;
+  --line-2: #afbba7;
+  --ink: #1c2620;
+  --ink-2: #323e36;
+  --muted: #4b5750;
+  --faint: #515d55;
+  --dot: rgba(28, 38, 32, 0.07);
+  --accent-a: #2f6e8f;
+  --accent-b: #5aa6a0;
+  --accent-ink: #245b78;
+  --accent-soft: rgba(47, 110, 143, 0.14);
+  --focus: #1c2620;
+  --ok: #27633a;
+  --warn: #704505;
+  --warn-bg: #efe4cc;
+  --danger: #97301f;
+  --danger-bg: #f0dcd6;
+  --flash: rgba(47, 110, 143, 0.07);
+  --shadow: 0 1px 0 rgba(28, 38, 32, 0.04), 0 1px 3px rgba(28, 38, 32, 0.08);
+  --shadow-lift: 0 14px 34px -14px rgba(28, 38, 32, 0.28), 0 2px 6px rgba(28, 38, 32, 0.07);
+  --panel-shadow: -28px 0 64px -24px rgba(28, 38, 32, 0.32);
+  --shadow-press: 0 6px 16px -8px rgba(28, 38, 32, 0.5);
+  --hue0-bg: #dfe0f0;
+  --hue0-fg: #3a3f80;
+  --hue1-bg: #d4e8e0;
+  --hue1-fg: #1a5546;
+  --hue2-bg: #ede2c9;
+  --hue2-fg: #674410;
+  --hue3-bg: #eedadc;
+  --hue3-fg: #822b3a;
+  --hue4-bg: #d8e6d3;
+  --hue4-fg: #2c5428;
+  --hue5-bg: #e6dbe8;
+  --hue5-fg: #583263;
+  --ask-rule: #8a6849;
+  --ask-bg: #e9e5dd;
+  --ask-ink: #6a4b30;
+  --ask-border: #bdbbaa;
+  --mark-ring: rgba(28, 38, 32, 0.26);
+  --type-taupe-bg: #8d837b;
+  --type-taupe-fg: #1c2620;
+  --type-taupe-ring: rgba(28, 38, 32, 0.12);
+  --type-sand-bg: #c8bdac;
+  --type-sand-fg: #1c2620;
+  --type-sand-ring: rgba(28, 38, 32, 0.12);
+  --type-khaki-bg: #aea489;
+  --type-khaki-fg: #1c2620;
+  --type-khaki-ring: rgba(28, 38, 32, 0.12);
+  --type-slate-bg: #777e90;
+  --type-slate-fg: #1c2620;
+  --type-slate-ring: rgba(28, 38, 32, 0.12);
+  --type-brown-bg: #936744;
+  --type-brown-fg: #1c2620;
+  --type-brown-ring: rgba(28, 38, 32, 0.12);
+  --type-plain-bg: #cbd3c5;
+  --type-plain-fg: #323e36;
+  --type-plain-ring: rgba(28, 38, 32, 0.12);
+  --capsule-a: #2f6e8f;
+  --capsule-b: #2b6684;
+  --capsule-c: #285f7c;
+  --capsule-ink: #ffffff;
+  --capsule-ring: rgba(90, 166, 160, 0.5);
+  --capsule-glow: rgba(47, 110, 143, 0.6);
+  --codelead-ink: #1d51a8;
+  --codelead-soft: rgba(31, 85, 176, 0.12);
+  --backdrop: rgba(28, 38, 32, 0.4);
+  --brand-ring: transparent;
+  --well-drop: rgba(220, 226, 216, 0.73);
+  --well-solid: #d0d9cc;
+  --panel-bar-bg: rgba(238, 241, 235, 0.97);
+  --pick: #2f6e8f;
+  --pick-ink: #ffffff;
+  --pick-surface: #dde5e3;
+  --ink-on-light: #1c2620;
+  --ink-on-dark: #f1f4ee;
+  --muted-on-light: #323e36;
+  --muted-on-dark: #d5ddd0;
+  --font-body: Verdana, "DejaVu Sans", "Bitstream Vera Sans", Geneva, sans-serif;
+  --font-display: var(--font-body);
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+:root[data-theme="navy"],
+[data-theme-scope="navy"] {
   color-scheme: dark;
   --ground: #060b18;
   --ground-2: #0a1222;
   --well: rgba(13, 21, 38, 0.72);
+  --well-line: transparent;
   --surface: #0d1526;
   --surface-2: #111c31;
   --line: #1b2740;
@@ -118,6 +497,8 @@
   --muted: #8fa0bc;
   --faint: #7787a3;
   --dot: rgba(232, 238, 248, 0.05);
+  --accent-a: #1e5eff;
+  --accent-b: #38c6ff;
   --accent-ink: #62cbff;
   --accent-soft: rgba(56, 198, 255, 0.16);
   --focus: #f4f7fb;
@@ -130,6 +511,7 @@
   --shadow: 0 1px 0 rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.35);
   --shadow-lift: 0 18px 40px -16px rgba(0, 0, 0, 0.8), 0 2px 8px rgba(0, 0, 0, 0.45);
   --panel-shadow: -30px 0 72px -22px rgba(0, 0, 0, 0.8);
+  --shadow-press: 0 6px 16px -8px rgba(11, 22, 48, 0.6);
   --hue0-bg: #211e4a;
   --hue0-fg: #c2bdff;
   --hue1-bg: #0d2c27;
@@ -142,9 +524,507 @@
   --hue4-fg: #a5daa5;
   --hue5-bg: #2a1836;
   --hue5-fg: #d8b3f0;
+  --ask-rule: #936744;
   --ask-bg: #1d1f2a;
   --ask-ink: #c9a07c;
+  --ask-border: #353541;
   --mark-ring: rgba(232, 238, 248, 0.32);
+  --type-taupe-bg: #1f2432;
+  --type-taupe-fg: #8d837b;
+  --type-taupe-ring: rgba(141, 131, 123, 0.34);
+  --type-sand-bg: #272d39;
+  --type-sand-fg: #c8bdac;
+  --type-sand-ring: rgba(200, 189, 172, 0.34);
+  --type-khaki-bg: #242934;
+  --type-khaki-fg: #aea489;
+  --type-khaki-ring: rgba(174, 164, 137, 0.34);
+  --type-slate-bg: #1c2435;
+  --type-slate-fg: #777e90;
+  --type-slate-ring: rgba(119, 126, 144, 0.34);
+  --type-brown-bg: #20202a;
+  --type-brown-fg: #936744;
+  --type-brown-ring: rgba(147, 103, 68, 0.34);
+  --type-plain-bg: #262f40;
+  --type-plain-fg: #c3cee0;
+  --type-plain-ring: rgba(195, 206, 224, 0.34);
+  --capsule-a: #1e5eff;
+  --capsule-b: #1b66f2;
+  --capsule-c: #1d72e6;
+  --capsule-ink: #ffffff;
+  --capsule-ring: rgba(79, 208, 255, 0.55);
+  --capsule-glow: rgba(30, 94, 255, 0.85);
+  --codelead-ink: #62cbff;
+  --codelead-soft: rgba(56, 198, 255, 0.16);
+  --backdrop: rgba(6, 11, 24, 0.45);
+  --brand-ring: #2a3a5a;
+  --well-drop: rgba(13, 21, 38, 0.832);
+  --well-solid: #0b1222;
+  --panel-bar-bg: rgba(13, 21, 38, 0.97);
+  --pick: #4f9dff;
+  --pick-ink: #060b18;
+  --pick-surface: #182b49;
+  --ink-on-light: #0b1630;
+  --ink-on-dark: #e8eef8;
+  --muted-on-light: #3d4b66;
+  --muted-on-dark: #c3cee0;
+  --font-body: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque", "Avenir Next Condensed", "Helvetica Neue", "Arial Narrow", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+:root[data-theme="pitch"],
+[data-theme-scope="pitch"] {
+  color-scheme: dark;
+  --ground: #000000;
+  --ground-2: #070708;
+  --well: rgba(17, 17, 19, 0.88);
+  --well-line: transparent;
+  --surface: #0c0c0e;
+  --surface-2: #151518;
+  --line: #24242a;
+  --line-2: #38383f;
+  --ink: #efeff1;
+  --ink-2: #d2d2d8;
+  --muted: #a6a6af;
+  --faint: #95959e;
+  --dot: rgba(239, 239, 241, 0.06);
+  --accent-a: #2f7bff;
+  --accent-b: #3fd0ff;
+  --accent-ink: #70c9ff;
+  --accent-soft: rgba(63, 208, 255, 0.15);
+  --focus: #ffffff;
+  --ok: #46d494;
+  --warn: #f5c76e;
+  --warn-bg: #2b1f08;
+  --danger: #ff8c82;
+  --danger-bg: #36100f;
+  --flash: rgba(63, 208, 255, 0.09);
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.6), 0 1px 3px rgba(0, 0, 0, 0.6);
+  --shadow-lift: 0 18px 40px -16px rgba(0, 0, 0, 0.9), 0 2px 8px rgba(0, 0, 0, 0.6);
+  --panel-shadow: -30px 0 72px -22px rgba(0, 0, 0, 0.9);
+  --shadow-press: 0 6px 16px -8px rgba(0, 0, 0, 0.9);
+  --hue0-bg: #1d1b40;
+  --hue0-fg: #c4bfff;
+  --hue1-bg: #0b2723;
+  --hue1-fg: #93e2d2;
+  --hue2-bg: #2c200a;
+  --hue2-fg: #f3ca7d;
+  --hue3-bg: #331320;
+  --hue3-fg: #f4abc1;
+  --hue4-bg: #12281a;
+  --hue4-fg: #a8dca8;
+  --hue5-bg: #261532;
+  --hue5-fg: #d9b6f1;
+  --ask-rule: #a07650;
+  --ask-bg: #1a1611;
+  --ask-ink: #d3a881;
+  --ask-border: #3f3632;
+  --mark-ring: rgba(239, 239, 241, 0.34);
+  --type-taupe-bg: #1e1d1d;
+  --type-taupe-fg: #8d837b;
+  --type-taupe-ring: rgba(141, 131, 123, 0.34);
+  --type-sand-bg: #262524;
+  --type-sand-fg: #c8bdac;
+  --type-sand-ring: rgba(200, 189, 172, 0.34);
+  --type-khaki-bg: #23211f;
+  --type-khaki-fg: #aea489;
+  --type-khaki-ring: rgba(174, 164, 137, 0.34);
+  --type-slate-bg: #1b1c20;
+  --type-slate-fg: #777e90;
+  --type-slate-ring: rgba(119, 126, 144, 0.34);
+  --type-brown-bg: #1f1916;
+  --type-brown-fg: #936744;
+  --type-brown-ring: rgba(147, 103, 68, 0.34);
+  --type-plain-bg: #28282a;
+  --type-plain-fg: #d2d2d8;
+  --type-plain-ring: rgba(210, 210, 216, 0.34);
+  --capsule-a: #2468e6;
+  --capsule-b: #2161d8;
+  --capsule-c: #1d5bcc;
+  --capsule-ink: #ffffff;
+  --capsule-ring: rgba(63, 208, 255, 0.55);
+  --capsule-glow: rgba(47, 123, 255, 0.7);
+  --codelead-ink: #7cbcff;
+  --codelead-soft: rgba(77, 148, 255, 0.17);
+  --backdrop: rgba(0, 0, 0, 0.6);
+  --brand-ring: #38383f;
+  --well-drop: rgba(15, 15, 17, 0.928);
+  --well-solid: #0f0f11;
+  --panel-bar-bg: rgba(12, 12, 14, 0.97);
+  --pick: #4a9eff;
+  --pick-ink: #000000;
+  --pick-surface: #162335;
+  --ink-on-light: #0b1630;
+  --ink-on-dark: #efeff1;
+  --muted-on-light: #31405c;
+  --muted-on-dark: #c8c8d0;
+  --font-body: Tahoma, Verdana, "Segoe UI", "DejaVu Sans", sans-serif;
+  --font-display: var(--font-body);
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+:root[data-theme="dusk"],
+[data-theme-scope="dusk"] {
+  color-scheme: dark;
+  --ground: #1c232e;
+  --ground-2: #212936;
+  --well: rgba(37, 46, 60, 0.74);
+  --well-line: transparent;
+  --surface: #262f3d;
+  --surface-2: #2c3646;
+  --line: #37435a;
+  --line-2: #48566f;
+  --ink: #e3e8f0;
+  --ink-2: #c8d1de;
+  --muted: #a9b4c5;
+  --faint: #9eaabb;
+  --dot: rgba(227, 232, 240, 0.05);
+  --accent-a: #4a8bf0;
+  --accent-b: #4fc6e0;
+  --accent-ink: #8ec7ff;
+  --accent-soft: rgba(79, 198, 224, 0.16);
+  --focus: #f1f4f8;
+  --ok: #63d39c;
+  --warn: #efc47d;
+  --warn-bg: #3a2e17;
+  --danger: #ffa197;
+  --danger-bg: #43242a;
+  --flash: rgba(79, 198, 224, 0.09);
+  --shadow: 0 1px 0 rgba(8, 12, 18, 0.3), 0 1px 3px rgba(8, 12, 18, 0.35);
+  --shadow-lift: 0 18px 40px -16px rgba(8, 12, 18, 0.75), 0 2px 8px rgba(8, 12, 18, 0.4);
+  --panel-shadow: -30px 0 72px -22px rgba(8, 12, 18, 0.75);
+  --shadow-press: 0 6px 16px -8px rgba(8, 12, 18, 0.7);
+  --hue0-bg: #302e5a;
+  --hue0-fg: #cdc9ff;
+  --hue1-bg: #1d3b38;
+  --hue1-fg: #a3e6d8;
+  --hue2-bg: #403420;
+  --hue2-fg: #f4d08c;
+  --hue3-bg: #47293b;
+  --hue3-fg: #f6b8ca;
+  --hue4-bg: #253c2c;
+  --hue4-fg: #b5dfb3;
+  --hue5-bg: #3b2c49;
+  --hue5-fg: #dfc2f4;
+  --ask-rule: #a98260;
+  --ask-bg: #2f3138;
+  --ask-ink: #d8b291;
+  --ask-border: #50515b;
+  --mark-ring: rgba(227, 232, 240, 0.32);
+  --type-taupe-bg: #343b46;
+  --type-taupe-fg: #8d837b;
+  --type-taupe-ring: rgba(141, 131, 123, 0.34);
+  --type-sand-bg: #3d434d;
+  --type-sand-fg: #c8bdac;
+  --type-sand-ring: rgba(200, 189, 172, 0.34);
+  --type-khaki-bg: #393f48;
+  --type-khaki-fg: #aea489;
+  --type-khaki-ring: rgba(174, 164, 137, 0.34);
+  --type-slate-bg: #313a49;
+  --type-slate-fg: #777e90;
+  --type-slate-ring: rgba(119, 126, 144, 0.34);
+  --type-brown-bg: #35373e;
+  --type-brown-fg: #936744;
+  --type-brown-ring: rgba(147, 103, 68, 0.34);
+  --type-plain-bg: #3d4654;
+  --type-plain-fg: #c8d1de;
+  --type-plain-ring: rgba(200, 209, 222, 0.34);
+  --capsule-a: #2f6bd0;
+  --capsule-b: #2b64c4;
+  --capsule-c: #285db8;
+  --capsule-ink: #ffffff;
+  --capsule-ring: rgba(79, 198, 224, 0.5);
+  --capsule-glow: rgba(58, 124, 227, 0.6);
+  --codelead-ink: #93c3ff;
+  --codelead-soft: rgba(90, 150, 255, 0.18);
+  --backdrop: rgba(10, 14, 20, 0.55);
+  --brand-ring: #48566f;
+  --well-drop: rgba(37, 46, 60, 0.844);
+  --well-solid: #232b38;
+  --panel-bar-bg: rgba(38, 47, 61, 0.97);
+  --pick: #74afff;
+  --pick-ink: #121a26;
+  --pick-surface: #32435c;
+  --ink-on-light: #121a26;
+  --ink-on-dark: #e3e8f0;
+  --muted-on-light: #2d3a4d;
+  --muted-on-dark: #c8d1de;
+  --font-body: Seravek, "Gill Sans Nova", Ubuntu, Calibri, "DejaVu Sans", sans-serif;
+  --font-display: var(--font-body);
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+:root[data-theme="ember"],
+[data-theme-scope="ember"] {
+  color-scheme: dark;
+  --ground: #16110d;
+  --ground-2: #1b1510;
+  --well: rgba(36, 27, 20, 0.76);
+  --well-line: transparent;
+  --surface: #211913;
+  --surface-2: #2a2019;
+  --line: #3b2e24;
+  --line-2: #4f3f32;
+  --ink: #f2e8da;
+  --ink-2: #ddccb6;
+  --muted: #bba992;
+  --faint: #ad9a82;
+  --dot: rgba(242, 232, 218, 0.05);
+  --accent-a: #d8792a;
+  --accent-b: #f0b14a;
+  --accent-ink: #f3b562;
+  --accent-soft: rgba(240, 177, 74, 0.15);
+  --focus: #f7efe4;
+  --ok: #7ccb90;
+  --warn: #f1c47d;
+  --warn-bg: #33240f;
+  --danger: #ff9d89;
+  --danger-bg: #3d1a14;
+  --flash: rgba(240, 177, 74, 0.08);
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-lift: 0 18px 40px -16px rgba(0, 0, 0, 0.8), 0 2px 8px rgba(0, 0, 0, 0.45);
+  --panel-shadow: -30px 0 72px -22px rgba(0, 0, 0, 0.8);
+  --shadow-press: 0 6px 16px -8px rgba(0, 0, 0, 0.8);
+  --hue0-bg: #2b2440;
+  --hue0-fg: #d0c6ff;
+  --hue1-bg: #16302a;
+  --hue1-fg: #a1ddca;
+  --hue2-bg: #36270f;
+  --hue2-fg: #f3cb80;
+  --hue3-bg: #3a1b21;
+  --hue3-fg: #f4b0bb;
+  --hue4-bg: #1d2e18;
+  --hue4-fg: #b5dba5;
+  --hue5-bg: #301d33;
+  --hue5-fg: #e1bce8;
+  --ask-rule: #b58457;
+  --ask-bg: #2b2119;
+  --ask-ink: #deb189;
+  --ask-border: #56412f;
+  --mark-ring: rgba(242, 232, 218, 0.32);
+  --type-taupe-bg: #302822;
+  --type-taupe-fg: #8d837b;
+  --type-taupe-ring: rgba(141, 131, 123, 0.34);
+  --type-sand-bg: #383028;
+  --type-sand-fg: #c8bdac;
+  --type-sand-ring: rgba(200, 189, 172, 0.34);
+  --type-khaki-bg: #352c24;
+  --type-khaki-fg: #aea489;
+  --type-khaki-ring: rgba(174, 164, 137, 0.34);
+  --type-slate-bg: #2d2725;
+  --type-slate-fg: #777e90;
+  --type-slate-ring: rgba(119, 126, 144, 0.34);
+  --type-brown-bg: #31241a;
+  --type-brown-fg: #936744;
+  --type-brown-ring: rgba(147, 103, 68, 0.34);
+  --type-plain-bg: #3b322a;
+  --type-plain-fg: #ddccb6;
+  --type-plain-ring: rgba(221, 204, 182, 0.34);
+  --capsule-a: #eaa43f;
+  --capsule-b: #f0b14a;
+  --capsule-c: #f4bc5a;
+  --capsule-ink: #1b130c;
+  --capsule-ring: rgba(255, 214, 140, 0.55);
+  --capsule-glow: rgba(216, 121, 42, 0.6);
+  --codelead-ink: #93c1ff;
+  --codelead-soft: rgba(100, 160, 255, 0.16);
+  --backdrop: rgba(0, 0, 0, 0.55);
+  --brand-ring: #4f3f32;
+  --well-drop: rgba(35, 26, 20, 0.856);
+  --well-solid: #211912;
+  --panel-bar-bg: rgba(33, 25, 19, 0.97);
+  --pick: #f0b14a;
+  --pick-ink: #1b130c;
+  --pick-surface: #42311c;
+  --ink-on-light: #20160e;
+  --ink-on-dark: #f2e8da;
+  --muted-on-light: #4a3a2b;
+  --muted-on-dark: #ddccb6;
+  --font-body: "Iowan Old Style", "Palatino Linotype", "URW Palladio L", P052, serif;
+  --font-display: var(--font-body);
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+:root[data-theme="contrast-light"],
+[data-theme-scope="contrast-light"] {
+  color-scheme: light;
+  --ground: #ececec;
+  --ground-2: #e2e2e2;
+  --well: #ffffff;
+  --well-line: #6b6b6b;
+  --surface: #ffffff;
+  --surface-2: #f2f2f2;
+  --line: #6b6b6b;
+  --line-2: #4a4a4a;
+  --ink: #000000;
+  --ink-2: #111111;
+  --muted: #2b2b2b;
+  --faint: #333333;
+  --dot: rgba(0, 0, 0, 0.07);
+  --accent-a: #0033a0;
+  --accent-b: #0050cc;
+  --accent-ink: #00297f;
+  --accent-soft: #e1e9ff;
+  --focus: #000000;
+  --ok: #00561d;
+  --warn: #5a3700;
+  --warn-bg: #fff1d6;
+  --danger: #990000;
+  --danger-bg: #ffeaea;
+  --flash: #e6edff;
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.12);
+  --shadow-lift: 0 8px 22px -10px rgba(0, 0, 0, 0.5);
+  --panel-shadow: -20px 0 48px -20px rgba(0, 0, 0, 0.5);
+  --shadow-press: 0 0 0 1px #000000;
+  --hue0-bg: #eceaff;
+  --hue0-fg: #22187a;
+  --hue1-bg: #ddf4ee;
+  --hue1-fg: #00453a;
+  --hue2-bg: #fff0d1;
+  --hue2-fg: #4c2d00;
+  --hue3-bg: #ffe5ee;
+  --hue3-fg: #700029;
+  --hue4-bg: #e2f4df;
+  --hue4-fg: #13430e;
+  --hue5-bg: #f3e6ff;
+  --hue5-fg: #481172;
+  --ask-rule: #6b4423;
+  --ask-bg: #fbf5ef;
+  --ask-ink: #563312;
+  --ask-border: #6b625b;
+  --mark-ring: #000000;
+  --type-taupe-bg: #f2f2f2;
+  --type-taupe-fg: #000000;
+  --type-taupe-ring: #4a4a4a;
+  --type-sand-bg: #f2f2f2;
+  --type-sand-fg: #000000;
+  --type-sand-ring: #4a4a4a;
+  --type-khaki-bg: #f2f2f2;
+  --type-khaki-fg: #000000;
+  --type-khaki-ring: #4a4a4a;
+  --type-slate-bg: #f2f2f2;
+  --type-slate-fg: #000000;
+  --type-slate-ring: #4a4a4a;
+  --type-brown-bg: #f2f2f2;
+  --type-brown-fg: #000000;
+  --type-brown-ring: #4a4a4a;
+  --type-plain-bg: #f2f2f2;
+  --type-plain-fg: #000000;
+  --type-plain-ring: #4a4a4a;
+  --capsule-a: #0033a0;
+  --capsule-b: #0033a0;
+  --capsule-c: #0033a0;
+  --capsule-ink: #ffffff;
+  --capsule-ring: #000000;
+  --capsule-glow: transparent;
+  --codelead-ink: #00297f;
+  --codelead-soft: #e1e9ff;
+  --backdrop: rgba(0, 0, 0, 0.6);
+  --brand-ring: #000000;
+  --well-drop: #ffffff;
+  --well-solid: #ffffff;
+  --panel-bar-bg: #ffffff;
+  --pick: #0033a0;
+  --pick-ink: #ffffff;
+  --pick-surface: #e8edf6;
+  --ink-on-light: #000000;
+  --ink-on-dark: #ffffff;
+  --muted-on-light: #1f1f1f;
+  --muted-on-dark: #e6e6e6;
+  --font-body: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", Verdana, "DejaVu Sans", sans-serif;
+  --font-display: var(--font-body);
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+:root[data-theme="contrast-dark"],
+[data-theme-scope="contrast-dark"] {
+  color-scheme: dark;
+  --ground: #000000;
+  --ground-2: #0a0a0a;
+  --well: #000000;
+  --well-line: #9a9a9a;
+  --surface: #0a0a0a;
+  --surface-2: #1a1a1a;
+  --line: #9a9a9a;
+  --line-2: #c4c4c4;
+  --ink: #ffffff;
+  --ink-2: #f2f2f2;
+  --muted: #dadada;
+  --faint: #d0d0d0;
+  --dot: rgba(255, 255, 255, 0.07);
+  --accent-a: #5aa9ff;
+  --accent-b: #7fd8ff;
+  --accent-ink: #a4d3ff;
+  --accent-soft: #0d2646;
+  --focus: #ffd400;
+  --ok: #72f0a6;
+  --warn: #ffd57d;
+  --warn-bg: #2e2100;
+  --danger: #ffa8a8;
+  --danger-bg: #3a0d0d;
+  --flash: #10233d;
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.06);
+  --shadow-lift: 0 8px 24px -10px rgba(0, 0, 0, 0.9);
+  --panel-shadow: -20px 0 48px -20px rgba(0, 0, 0, 0.9);
+  --shadow-press: 0 0 0 1px #ffffff;
+  --hue0-bg: #1d1a44;
+  --hue0-fg: #d8d4ff;
+  --hue1-bg: #062a24;
+  --hue1-fg: #a8f0e1;
+  --hue2-bg: #2e2000;
+  --hue2-fg: #ffe1a6;
+  --hue3-bg: #3a0f20;
+  --hue3-fg: #ffc6d7;
+  --hue4-bg: #0c2a10;
+  --hue4-fg: #c5f0c1;
+  --hue5-bg: #2a1238;
+  --hue5-fg: #edd2ff;
+  --ask-rule: #d9a679;
+  --ask-bg: #1c140c;
+  --ask-ink: #f2cba6;
+  --ask-border: #a89d93;
+  --mark-ring: #ffffff;
+  --type-taupe-bg: #1a1a1a;
+  --type-taupe-fg: #ffffff;
+  --type-taupe-ring: #c4c4c4;
+  --type-sand-bg: #1a1a1a;
+  --type-sand-fg: #ffffff;
+  --type-sand-ring: #c4c4c4;
+  --type-khaki-bg: #1a1a1a;
+  --type-khaki-fg: #ffffff;
+  --type-khaki-ring: #c4c4c4;
+  --type-slate-bg: #1a1a1a;
+  --type-slate-fg: #ffffff;
+  --type-slate-ring: #c4c4c4;
+  --type-brown-bg: #1a1a1a;
+  --type-brown-fg: #ffffff;
+  --type-brown-ring: #c4c4c4;
+  --type-plain-bg: #1a1a1a;
+  --type-plain-fg: #ffffff;
+  --type-plain-ring: #c4c4c4;
+  --capsule-a: #8fcbff;
+  --capsule-b: #8fcbff;
+  --capsule-c: #8fcbff;
+  --capsule-ink: #000000;
+  --capsule-ring: #ffffff;
+  --capsule-glow: transparent;
+  --codelead-ink: #a4d3ff;
+  --codelead-soft: #0d2646;
+  --backdrop: rgba(0, 0, 0, 0.72);
+  --brand-ring: #ffffff;
+  --well-drop: #040404;
+  --well-solid: #000000;
+  --panel-bar-bg: #0a0a0a;
+  --pick: #8fcbff;
+  --pick-ink: #000000;
+  --pick-surface: #1f2931;
+  --ink-on-light: #000000;
+  --ink-on-dark: #ffffff;
+  --muted-on-light: #1f1f1f;
+  --muted-on-dark: #e6e6e6;
+  --font-body: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", Verdana, "DejaVu Sans", sans-serif;
+  --font-display: var(--font-body);
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
 /* ------------------------------------------------------------------------------------------ */
@@ -165,7 +1045,7 @@ body {
   margin: 0;
   background: var(--ground);
   color: var(--ink);
-  font: 14px/1.5 var(--font-body);
+  font: var(--text-size) / var(--text-leading) var(--font-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -256,16 +1136,7 @@ kbd {
 .brand svg {
   flex: none;
   border-radius: 50%;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .brand svg {
-    box-shadow: 0 0 0 1px var(--line-2);
-  }
-}
-
-:root[data-theme="dark"] .brand svg {
-  box-shadow: 0 0 0 1px var(--line-2);
+  box-shadow: 0 0 0 1px var(--brand-ring);
 }
 
 .brand-name {
@@ -418,9 +1289,9 @@ kbd {
 /* The blue holds white text at 4.5:1 or more across the pill; the mark's cyan rings it. */
 .capsule-unseen {
   border-color: transparent;
-  background: linear-gradient(115deg, var(--accent-a) 0%, #1b66f2 70%, #1d72e6 100%);
-  color: #ffffff;
-  box-shadow: inset 0 0 0 1px rgba(79, 208, 255, 0.55), 0 0 0 3px var(--accent-soft), 0 8px 20px -10px rgba(30, 94, 255, 0.85);
+  background: linear-gradient(115deg, var(--capsule-a) 0%, var(--capsule-b) 70%, var(--capsule-c) 100%);
+  color: var(--capsule-ink);
+  box-shadow: inset 0 0 0 1px var(--capsule-ring), 0 0 0 3px var(--accent-soft), 0 8px 20px -10px var(--capsule-glow);
 }
 
 .capsule-unseen:hover {
@@ -860,7 +1731,7 @@ kbd {
 }
 
 .primary:hover:not(:disabled) {
-  box-shadow: 0 6px 16px -8px rgba(11, 22, 48, 0.6);
+  box-shadow: var(--shadow-press);
 }
 
 .secondary {
@@ -996,22 +1867,34 @@ kbd {
  * chip tinted 14% with it (3.28:1 to 7.45:1). Never the colour as text.
  */
 .tone-taupe {
-  --tone: #8d837b;
+  --chip-bg: var(--type-taupe-bg);
+  --chip-fg: var(--type-taupe-fg);
+  --chip-ring: var(--type-taupe-ring);
 }
 .tone-sand {
-  --tone: #c8bdac;
+  --chip-bg: var(--type-sand-bg);
+  --chip-fg: var(--type-sand-fg);
+  --chip-ring: var(--type-sand-ring);
 }
 .tone-khaki {
-  --tone: #aea489;
+  --chip-bg: var(--type-khaki-bg);
+  --chip-fg: var(--type-khaki-fg);
+  --chip-ring: var(--type-khaki-ring);
 }
 .tone-slate {
-  --tone: #777e90;
+  --chip-bg: var(--type-slate-bg);
+  --chip-fg: var(--type-slate-fg);
+  --chip-ring: var(--type-slate-ring);
 }
 .tone-brown {
-  --tone: #936744;
+  --chip-bg: var(--type-brown-bg);
+  --chip-fg: var(--type-brown-fg);
+  --chip-ring: var(--type-brown-ring);
 }
 .tone-plain {
-  --tone: var(--ink-2);
+  --chip-bg: var(--type-plain-bg);
+  --chip-fg: var(--type-plain-fg);
+  --chip-ring: var(--type-plain-ring);
 }
 
 .type-chip {
@@ -1021,14 +1904,9 @@ kbd {
   width: 20px;
   height: 20px;
   border-radius: 6px;
-  background: var(--tone);
-  box-shadow: inset 0 0 0 1px rgba(11, 22, 48, 0.12);
-  color: #0b1630;
-}
-
-.type-chip.tone-plain {
-  background: var(--line);
-  color: var(--ink-2);
+  background: var(--chip-bg);
+  box-shadow: inset 0 0 0 1px var(--chip-ring);
+  color: var(--chip-fg);
 }
 
 .type-chip-small {
@@ -1037,19 +1915,6 @@ kbd {
   border-radius: 5px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .type-chip {
-    background: color-mix(in srgb, var(--tone) 14%, var(--surface));
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 34%, transparent);
-    color: var(--tone);
-  }
-}
-
-:root[data-theme="dark"] .type-chip {
-  background: color-mix(in srgb, var(--tone) 14%, var(--surface));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 34%, transparent);
-  color: var(--tone);
-}
 
 /* ---- the board ------------------------------------------------------------------------------ */
 
@@ -1066,6 +1931,7 @@ kbd {
   padding: 16px 22px 20px;
   overflow-x: auto;
   overflow-y: hidden;
+  background-color: var(--board-bg);
   background-image: radial-gradient(var(--dot) 1px, transparent 1.4px);
   background-size: 22px 22px;
   scrollbar-color: var(--line-2) transparent;
@@ -1078,7 +1944,7 @@ kbd {
   min-width: 236px;
   max-width: 380px;
   min-height: 0;
-  border: 1px solid transparent;
+  border: 1px solid var(--well-line);
   border-radius: 14px;
   background: var(--well);
   backdrop-filter: blur(2px);
@@ -1088,7 +1954,7 @@ kbd {
 .column.drop-target {
   border-color: var(--ink-2);
   border-style: dashed;
-  background: color-mix(in srgb, var(--well) 60%, var(--surface));
+  background: var(--well-drop);
 }
 
 .column-head {
@@ -1119,6 +1985,7 @@ kbd {
 
 .column-title h2 {
   margin: 0;
+  color: var(--board-ink);
   font-family: var(--font-display);
   font-size: 17px;
   font-weight: 680;
@@ -1134,8 +2001,17 @@ kbd {
   white-space: nowrap;
 }
 
-.count-over {
+.column-head .count,
+.column-strip .count {
+  color: var(--board-muted);
+}
+
+/* Over the column's limit: the danger colour, and an underline, so that colour is not the only sign. */
+.column-head .count-over {
   color: var(--danger);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .column-tools {
@@ -1153,7 +2029,7 @@ kbd {
 
 .column-note {
   margin: 3px 0 0;
-  color: var(--muted);
+  color: var(--board-muted);
   font-size: 12px;
   font-style: italic;
 }
@@ -1203,7 +2079,7 @@ kbd {
   border: 0;
   border-radius: 14px;
   background: transparent;
-  color: var(--ink-2);
+  color: var(--board-ink);
 }
 
 .strip-name {
@@ -1278,9 +2154,18 @@ kbd {
 
 .tile-top {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  color: var(--muted);
+}
+
+/* The id and the marks beside it stay together, on the right; on a narrow tile they go to a line of their own. */
+.tile-top-end {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--muted);
+  margin-left: auto;
 }
 
 .tile-type {
@@ -1302,7 +2187,6 @@ kbd {
 }
 
 .tile-id {
-  margin-left: auto;
   color: var(--muted);
   font: 500 11.5px/1 var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -1660,7 +2544,7 @@ select.field-input {
   z-index: 3;
   padding: 10px 30px;
   border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface) 97%, transparent);
+  background: var(--panel-bar-bg);
   backdrop-filter: blur(12px);
 }
 
@@ -1759,7 +2643,7 @@ select.field-input {
 .ask-block {
   margin: 16px 0 0;
   padding: 11px 14px 13px 16px;
-  border: 1px solid color-mix(in srgb, var(--ask-rule) 22%, var(--line));
+  border: 1px solid var(--ask-border);
   border-left: 4px solid var(--ask-rule);
   border-radius: 10px;
   background: var(--ask-bg);
@@ -2723,7 +3607,7 @@ dialog.confirm {
 }
 
 dialog.confirm::backdrop {
-  background: rgba(6, 11, 24, 0.45);
+  background: var(--backdrop);
 }
 
 dialog.confirm h2 {
@@ -2742,6 +3626,679 @@ dialog.confirm p {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* ---- a board background of the person's own ---------------------------------------------------- */
+
+/*
+ * The picked colour is the board's backdrop: each column's cards keep the theme's well (opaque, as it
+ * looks on the theme's own ground), and the column's title, count and note are drawn on the colour
+ * itself, in --board-ink and --board-muted, which App.tsx switches to the theme's text for a light or a
+ * dark ground when the theme's own would read under 4.5:1 there.
+ */
+:root[data-background] .column {
+  border-color: transparent;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+:root[data-background] .column-body {
+  margin: 0 2px 2px;
+  border-radius: 12px;
+  background: var(--well-solid);
+}
+
+:root[data-background] .column.drop-target .column-body {
+  outline: 2px dashed var(--board-ink);
+  outline-offset: -2px;
+}
+
+:root[data-background] .column-head::after {
+  background: var(--board-muted);
+}
+
+:root[data-background] .column-person .column-head::after {
+  background: var(--board-ink);
+}
+
+:root[data-background] .column-tools .icon-button {
+  color: var(--board-ink);
+}
+
+:root[data-background] .column-collapsed {
+  border-color: var(--board-muted);
+}
+
+/* ---- projects: the selector at the left of the top bar ------------------------------------------ */
+
+.project-wrap {
+  position: relative;
+  margin-left: 6px;
+  min-width: 0;
+}
+
+.project-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 280px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.project-button:hover {
+  border-color: var(--line-2);
+}
+
+/* A project chosen: the edge says the board is narrowed (not the colour alone). */
+.project-on {
+  border-color: var(--ink-2);
+  box-shadow: inset 0 0 0 1px var(--ink-2);
+}
+
+.project-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-list {
+  top: calc(100% + 8px);
+  left: 0;
+  width: 290px;
+  max-height: 64vh;
+  overflow-y: auto;
+}
+
+.project-option {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13.5px;
+  text-align: left;
+}
+
+.project-option:hover,
+.project-option:focus-visible {
+  background: var(--surface-2);
+}
+
+.project-option.on {
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  font-weight: 600;
+}
+
+.project-option-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-all {
+  margin-bottom: 4px;
+}
+
+.project-none .project-option-name {
+  font-style: italic;
+}
+
+.project-count {
+  color: var(--muted);
+  font: 500 12px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the theme and background menu --------------------------------------------------------------- */
+
+.theme-wrap {
+  position: relative;
+}
+
+.theme-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.theme-button:hover {
+  border-color: var(--line-2);
+  background: var(--surface-2);
+}
+
+/* Two columns: the themes, and the board's background beside them; one column on a narrow window. */
+.theme-menu {
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 236px;
+  gap: 0 14px;
+  width: min(620px, calc(100vw - 32px));
+  max-height: min(86vh, 760px);
+  padding: 8px 10px 10px;
+  overflow-y: auto;
+}
+
+.theme-menu-head {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.theme-menu-head .popover-title {
+  padding-right: 0;
+}
+
+.theme-for {
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.theme-default {
+  margin-left: auto;
+}
+
+.theme-list {
+  display: grid;
+  gap: 2px;
+}
+
+.theme-group-name {
+  padding: 8px 8px 3px;
+  color: var(--faint);
+  font: 600 10.5px/1 var(--font-body);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.theme-option {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.theme-option:hover {
+  background: var(--surface-2);
+}
+
+/* The theme in use: a framed row and a check, not the colour alone. */
+.theme-option.on {
+  border-color: var(--ink-2);
+  background: var(--surface-2);
+}
+
+.theme-system {
+  margin-top: 6px;
+}
+
+/* A theme's name in its own face (the element carries the theme's tokens); its colour is the menu's. */
+.theme-name {
+  min-width: 0;
+  font-family: var(--font-body);
+  font-size: 14.5px;
+  line-height: 1.3;
+}
+
+.theme-note {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.theme-check {
+  color: var(--ink);
+}
+
+.theme-swatch {
+  position: relative;
+  display: block;
+  width: 46px;
+  height: 30px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--ground);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+
+.swatch-card {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 26px;
+  height: 18px;
+  padding: 4px;
+  border-radius: 3px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.swatch-line {
+  display: block;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--ink);
+}
+
+.swatch-line-short {
+  width: 60%;
+  background: var(--muted);
+}
+
+.swatch-accent {
+  position: absolute;
+  top: 7px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-a);
+}
+
+.theme-swatch-pair {
+  display: flex;
+  width: 46px;
+  overflow: hidden;
+  border-radius: 6px;
+}
+
+.theme-swatch-pair .theme-swatch {
+  width: 23px;
+  flex: none;
+  border-radius: 0;
+}
+
+.theme-swatch-pair .swatch-card {
+  left: 4px;
+  width: 15px;
+}
+
+.theme-swatch-pair .swatch-accent {
+  display: none;
+}
+
+.theme-menu-section {
+  padding-top: 6px;
+  border-left: 1px solid var(--line);
+  padding-left: 12px;
+}
+
+.background-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0 2px;
+}
+
+.background-theme {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.background-theme.on {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.background-swatch {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1px var(--mark-ring);
+  color: var(--ink);
+}
+
+.background-swatch.on {
+  box-shadow: inset 0 0 0 1px var(--mark-ring), 0 0 0 2px var(--surface), 0 0 0 4px var(--ink);
+}
+
+.background-custom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.background-custom input {
+  width: 34px;
+  height: 26px;
+  padding: 1px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.background-custom.on {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.theme-saving {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+@media (max-width: 700px) {
+  .theme-menu {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .theme-menu-section {
+    margin-top: 8px;
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+}
+
+/* ---- picking cards for a bulk change ------------------------------------------------------------- */
+
+/* The box in a tile's corner: on hover, and on every tile while a pick exists (in the type chip's place). */
+.tile-pick {
+  display: none;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid var(--ink-2);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--pick-ink);
+  cursor: pointer;
+}
+
+.tile:hover .tile-pick,
+.board-picking .tile-pick {
+  display: inline-grid;
+}
+
+.tile:hover .tile-pick + .type-chip,
+.board-picking .tile-pick + .type-chip {
+  display: none;
+}
+
+.tile-pick.on {
+  border-color: var(--pick);
+  background: var(--pick);
+}
+
+/* A picked card: a ring in the pick's colour, its ground tinted, and the ticked box. */
+.tile-picked {
+  border-color: var(--pick);
+  background: var(--pick-surface);
+  box-shadow: 0 0 0 1px var(--pick), var(--shadow);
+}
+
+.column-tools-open {
+  opacity: 1;
+}
+
+.column-menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.column-menu {
+  top: calc(100% + 4px);
+  right: 0;
+  width: 250px;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  text-align: left;
+}
+
+.menu-item:hover:not(:disabled),
+.menu-item:focus-visible {
+  background: var(--surface-2);
+}
+
+/* ---- the bulk bar and its dialogs ----------------------------------------------------------------- */
+
+.bulk-bar {
+  position: fixed;
+  right: 0;
+  bottom: 18px;
+  left: 0;
+  z-index: 45;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  margin: 0 auto;
+  padding: 7px 8px 7px 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-lift);
+}
+
+/* While cards are picked, a column's last cards scroll clear of the bar. */
+.board-picking .column-body {
+  padding-bottom: 84px;
+}
+
+.bulk-count {
+  padding-right: 4px;
+  color: var(--ink-2);
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+
+.bulk-count b {
+  color: var(--ink);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bulk-sep {
+  width: 1px;
+  height: 22px;
+  background: var(--line);
+}
+
+.bulk-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.bulk-action:hover:not(:disabled) {
+  border-color: var(--ink-2);
+  background: var(--surface-2);
+}
+
+.bulk-clear {
+  color: var(--ink-2);
+}
+
+.message-above-bar {
+  bottom: 84px;
+}
+
+.message .message-undo {
+  font-weight: 700;
+}
+
+dialog.bulk-dialog {
+  width: min(480px, calc(100vw - 32px));
+  max-width: none;
+}
+
+.bulk-dialog form {
+  margin: 0;
+}
+
+.bulk-choices {
+  display: grid;
+  gap: 5px;
+  max-height: 50vh;
+  margin: 4px 0 18px;
+  overflow-y: auto;
+}
+
+.bulk-choice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.bulk-choice.on {
+  border-color: var(--ink);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.bulk-choice input,
+.bulk-replace input {
+  accent-color: var(--ink);
+}
+
+.bulk-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.bulk-tag {
+  font: 500 13px/1.3 var(--font-mono);
+}
+
+.bulk-field {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 12px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+.bulk-replace {
+  margin-bottom: 8px;
+}
+
+dialog.confirm .bulk-hint {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.composer-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* ---- high contrast: what colour says, an edge or a line says too ---------------------------------- */
+
+:root:is([data-theme="contrast-light"], [data-theme="contrast-dark"]) :focus-visible {
+  outline-width: 3px;
+}
+
+:root:is([data-theme="contrast-light"], [data-theme="contrast-dark"]) .md .mention-you {
+  border-width: 2px;
+}
+
+:root:is([data-theme="contrast-light"], [data-theme="contrast-dark"]) .segmented button.on,
+:root:is([data-theme="contrast-light"], [data-theme="contrast-dark"]) .codelead-filter[aria-pressed="true"] {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+:root:is([data-theme="contrast-light"], [data-theme="contrast-dark"]) .chip-repo {
+  border-color: currentColor;
+}
+
+:root:is([data-theme="contrast-light"], [data-theme="contrast-dark"]) .tile-faded {
+  opacity: 0.45;
+}
+
+:root:is([data-theme="contrast-light"], [data-theme="contrast-dark"]) .tile-picked {
+  box-shadow: 0 0 0 2px var(--pick), var(--shadow);
 }
 
 /* ---- narrow windows and reduced motion -------------------------------------------------------- */
@@ -2782,6 +4339,22 @@ dialog.confirm p {
   .panel-pair {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .brand-board {
+    max-width: 160px;
+  }
+}
+
+/* Around 800 px the top bar keeps the brand, the project, the bell and the theme; the board's name gives way. */
+@media (max-width: 900px) {
+  .brand-board,
+  .theme-button-name {
+    display: none;
+  }
+
+  .bulk-bar {
+    bottom: 10px;
+  }
 }
 
 @media (max-width: 760px) {
@@ -2792,7 +4365,9 @@ dialog.confirm p {
   }
 
   .brand-board,
-  .person {
+  .person,
+  .theme-button-name,
+  .live {
     display: none;
   }
 
@@ -2847,8 +4422,8 @@ dialog.confirm p {
 
 /* The same blue tag is visible in every workflow column and in its quick filter. */
 .chip.chip-codelead {
-  color: var(--accent-ink);
-  background: var(--accent-soft);
+  color: var(--codelead-ink);
+  background: var(--codelead-soft);
   border: 1px solid currentColor;
   font-weight: 600;
 }

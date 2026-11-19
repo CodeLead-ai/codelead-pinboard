@@ -1,11 +1,33 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
-import type { BoardPayload, CardChangesInput, CardDetail, CardMessage, CardSummary, EventItem, NewCardInput, NotificationsPayload, ReadyMessage, WritePayload } from "../../server/contract.js";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import type {
+  BatchInput,
+  BatchPayload,
+  BoardPayload,
+  CardChangesInput,
+  CardDetail,
+  CardMessage,
+  CardSummary,
+  EventItem,
+  NewCardInput,
+  NotificationsPayload,
+  PreferencesDocument,
+  ReadyMessage,
+  ThemeChoicesInfo,
+  WritePayload
+} from "../../server/contract.js";
+import { choicesFor, defaultPreferences, effectiveTheme, THEME_BACKGROUND } from "../../core/themes.js";
 import { api, Refused, wordsOf } from "./api.js";
+import { backdropText } from "./appearance.mjs";
 import { BoardView } from "./Board.js";
+import { BulkBar } from "./BulkBar.js";
 import { CardPanel, type PanelActions } from "./CardPanel.js";
 import { FilterBar } from "./FilterBar.js";
 import { cardAbove, classes, columnCards, columnName, keyOf, lastColumnOf, matches, onBoard, rankFor, readFilter, readStack, writeQuery, type Filter } from "./model.js";
-import { TopBar, type LiveState, type ThemeChoice } from "./TopBar.js";
+import { inProject, NO_PROJECT, projectEntries, projectTags, readProject } from "./projects.mjs";
+import { ProjectMenu } from "./ProjectMenu.js";
+import { extend, inBoardOrder, prune, selectAll, toggle } from "./selection.mjs";
+import { ThemeMenu } from "./ThemeMenu.js";
+import { TopBar, type LiveState } from "./TopBar.js";
 
 /**
  * The board's page (spec section 6): the board, the cards' panels, the notifications, kept live by
@@ -13,13 +35,41 @@ import { TopBar, type LiveState, type ThemeChoice } from "./TopBar.js";
  * the page makes goes through the process, as the board's person.
  */
 
-function readTheme(): ThemeChoice {
+/**
+ * The theme this browser kept before the preferences moved to the board's process (the first page
+ * cycled light, dark and system): read once, as the starting default, when the board has no
+ * preferences file yet. From then on the file is the truth.
+ */
+function legacyTheme(): string | undefined {
   try {
     const stored = localStorage.getItem("pinboard.theme");
-    return stored === "light" || stored === "dark" ? stored : "system";
+    return stored === "light" ? "paper" : stored === "dark" ? "navy" : undefined;
   } catch {
-    return "system";
+    return undefined;
   }
+}
+
+/** The theme the page shows, kept in this browser only so that the next visit starts in it before the preferences arrive (index.html reads it). */
+function rememberApplied(theme: string): void {
+  try {
+    localStorage.setItem("pinboard.appliedTheme", theme);
+  } catch {
+    // No storage: the next visit starts in the system's light or dark until the preferences arrive.
+  }
+}
+
+/** True while the system asks for dark. */
+function useSystemDark(): boolean {
+  const query = "(prefers-color-scheme: dark)";
+  const [dark, setDark] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const list = window.matchMedia(query);
+    const change = (): void => setDark(list.matches);
+    change();
+    list.addEventListener("change", change);
+    return () => list.removeEventListener("change", change);
+  }, []);
+  return dark;
 }
 
 /**
@@ -94,7 +144,17 @@ function applyCardMessage(board: BoardPayload | null, message: CardMessage): Boa
   return { ...board, cards: board.cards.filter((card) => keyOf(card.id) !== key) };
 }
 
-type Message = { text: string; tone: "info" | "refusal" };
+type Message = { text: string; tone: "info" | "refusal"; undo?: () => void };
+
+/** The words of a bulk change: "6 moved to Done, 1 already there, 1 refused: #42 changed since you read it". */
+function bulkReport(payload: BatchPayload, done: string, unchanged: string): string {
+  const parts = [`${payload.changed} ${done}`];
+  if (payload.unchanged > 0) parts.push(`${payload.unchanged} ${unchanged}`);
+  const refused = payload.results.filter((result) => result.refused);
+  let text = parts.join(", ");
+  if (refused.length > 0) text += `, ${refused.length} refused: ${refused.map((result) => `#${String(result.id)} ${result.refused!.reason}`).join("; ")}`;
+  return `${text}.`;
+}
 
 export function App() {
   const [board, setBoard] = useState<BoardPayload | null>(null);
@@ -109,7 +169,15 @@ export function App() {
   const [composer, setComposer] = useState<string | null>(null);
   const [capsule, setCapsule] = useState(false);
   const [keys, setKeys] = useState(false);
-  const [theme, setTheme] = useState<ThemeChoice>(readTheme);
+  const [prefs, setPrefs] = useState<PreferencesDocument | null>(null);
+  const prefsRef = useRef<PreferencesDocument | null>(null);
+  prefsRef.current = prefs;
+  const [project, setProject] = useState<string>(() => readProject(window.location.search) ?? "");
+  const projectInAddress = useRef(readProject(window.location.search) !== undefined);
+  const systemDark = useSystemDark();
+  const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
+  const anchor = useRef<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [live, setLive] = useState<LiveState>("connecting");
   const [message, setMessage] = useState<Message | null>(null);
   const [choices, setChoices] = useState<{ board: string; columns: ColumnChoices } | null>(null);
@@ -129,7 +197,7 @@ export function App() {
   // ------------------------------------------------------------------------------------------
   // Reading
 
-  const say = useCallback((text: string, tone: Message["tone"] = "info") => setMessage({ text, tone }), []);
+  const say = useCallback((text: string, tone: Message["tone"] = "info", undo?: () => void) => setMessage({ text, tone, ...(undo ? { undo } : {}) }), []);
 
   /** Where the stream starts: the log's position when the board was first read (no line falls between the two). */
   const [streamFrom, setStreamFrom] = useState<number | null>(null);
@@ -207,6 +275,49 @@ export function App() {
     }, 2400);
   }, []);
 
+  // The view preferences: the board's file (.local/preferences.json), read at the start and whenever
+  // another page changes them; the project the page showed last, unless the address names one.
+  const preferencesAsked = useRef(0);
+  const loadPreferences = useCallback(async (first = false) => {
+    const asked = ++preferencesAsked.current;
+    try {
+      const payload = await api.preferences();
+      if (asked !== preferencesAsked.current) return;
+      let doc = payload.preferences;
+      if (first && !payload.stored) {
+        const legacy = legacyTheme();
+        if (legacy) {
+          doc = { ...doc, default: { ...doc.default, theme: legacy, ...(legacy === "paper" ? { lightTheme: legacy } : { darkTheme: legacy }) } };
+          void api.savePreferences(doc).catch(() => undefined);
+        }
+      }
+      setPrefs(doc);
+      if (first && !projectInAddress.current && doc.lastProject !== undefined) setProject(doc.lastProject);
+    } catch {
+      if (first) setPrefs((previous) => previous ?? defaultPreferences());
+    }
+  }, []);
+
+  /** Writes the preferences; the page shows them at once, and the process's answer (or a refusal, in its words) settles them. */
+  const savePreferences = useCallback(
+    async (next: PreferencesDocument) => {
+      const asked = ++preferencesAsked.current;
+      setPrefs(next);
+      try {
+        const saved = await api.savePreferences(next);
+        if (asked === preferencesAsked.current) setPrefs(saved.preferences);
+      } catch (error) {
+        say(wordsOf(error), "refusal");
+        void loadPreferences();
+      }
+    },
+    [say, loadPreferences]
+  );
+
+  useEffect(() => {
+    void loadPreferences(true);
+  }, [loadPreferences]);
+
   useEffect(() => {
     void loadBoard();
     void loadNotes();
@@ -260,38 +371,94 @@ export function App() {
     });
     source.addEventListener("board", () => void loadBoard(true));
     source.addEventListener("notifications", () => refreshNotes());
+    source.addEventListener("preferences", () => void loadPreferences());
     source.onerror = () => setLive(source.readyState === EventSource.CLOSED ? "offline" : "connecting");
     return () => source.close();
-  }, [streamFrom, loadBoard, refreshNotes, refreshDetail, flash]);
+  }, [streamFrom, loadBoard, refreshNotes, refreshDetail, flash, loadPreferences]);
 
   // ------------------------------------------------------------------------------------------
-  // What the page keeps: the filter and the open cards in the URL, the theme and the collapsed columns in this browser.
+  // What the page keeps: the project, the filter and the open cards in the URL; the theme and the
+  // board's background in the board's preferences; the collapsed columns in this browser.
 
   useEffect(() => {
-    const search = writeQuery(filter, stack);
+    const search = writeQuery(filter, stack, project);
     if (search !== window.location.search) window.history.replaceState(null, "", `${window.location.pathname}${search}`);
-  }, [filter, stack]);
+  }, [filter, stack, project]);
 
   useEffect(() => {
     const onPop = (): void => {
       setFilter(readFilter(window.location.search));
       setStack(readStack(window.location.search));
+      setProject(readProject(window.location.search) ?? "");
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  useEffect(() => {
+  // The theme and the background of the project shown (its own choices, then the default's).
+  const preferences = prefs ?? defaultPreferences();
+  const themeChoices = choicesFor(preferences, project);
+  const shownTheme = effectiveTheme(themeChoices, systemDark);
+  const ownChoices = project !== "" && project !== NO_PROJECT && preferences.projects[project] !== undefined;
+
+  useLayoutEffect(() => {
+    // Until the preferences arrive, the page keeps the theme it started in (index.html), so it does not flash another.
+    if (prefs === null) return;
     const root = document.documentElement;
-    if (theme === "system") root.removeAttribute("data-theme");
-    else root.setAttribute("data-theme", theme);
-    try {
-      if (theme === "system") localStorage.removeItem("pinboard.theme");
-      else localStorage.setItem("pinboard.theme", theme);
-    } catch {
-      // No storage: the choice lasts as long as the page.
+    root.setAttribute("data-theme", shownTheme.id);
+    rememberApplied(shownTheme.id);
+    const background = themeChoices.background;
+    const clear = (...names: string[]): void => names.forEach((name) => root.style.removeProperty(name));
+    if (background === THEME_BACKGROUND) {
+      clear("--board-bg", "--board-ink", "--board-muted");
+      root.removeAttribute("data-background");
+      return;
     }
-  }, [theme]);
+    root.style.setProperty("--board-bg", background);
+    root.setAttribute("data-background", background);
+    // The text on the backdrop keeps the theme's ink while it reads at 4.5:1 on the picked colour.
+    const style = getComputedStyle(root);
+    const token = (name: string): string => style.getPropertyValue(name).trim();
+    const text = backdropText(
+      { ink: token("--ink"), muted: token("--muted"), inkOnLight: token("--ink-on-light"), inkOnDark: token("--ink-on-dark"), mutedOnLight: token("--muted-on-light"), mutedOnDark: token("--muted-on-dark") },
+      background
+    );
+    if (text) {
+      root.style.setProperty("--board-ink", text.ink);
+      root.style.setProperty("--board-muted", text.muted);
+    } else clear("--board-ink", "--board-muted");
+  }, [prefs, shownTheme.id, themeChoices.background]);
+
+  /** A theme or a background picked in the menu: kept for the project shown, or as the default for all projects. */
+  const pickChoices = useCallback(
+    (patch: ThemeChoicesInfo) => {
+      const current = prefsRef.current ?? defaultPreferences();
+      const key = project === "" || project === NO_PROJECT ? null : project;
+      const next: PreferencesDocument =
+        key === null
+          ? { ...current, default: { ...current.default, ...patch } }
+          : { ...current, projects: { ...current.projects, [key]: { ...(current.projects[key] ?? {}), ...patch } } };
+      void savePreferences(next);
+    },
+    [project, savePreferences]
+  );
+
+  const useDefaultChoices = useCallback(() => {
+    const current = prefsRef.current ?? defaultPreferences();
+    if (project === "" || project === NO_PROJECT || current.projects[project] === undefined) return;
+    const { [project]: _dropped, ...projects } = current.projects;
+    void savePreferences({ ...current, projects });
+  }, [project, savePreferences]);
+
+  /** Shows another project, and keeps it as the one the page shows next time. */
+  const chooseProject = useCallback(
+    (next: string) => {
+      setProject(next);
+      const current = prefsRef.current;
+      if (current && (current.lastProject ?? "") !== next) void savePreferences({ ...current, lastProject: next });
+    },
+    [savePreferences]
+  );
 
   // The columns the person collapsed or opened are this board's, kept per board; the others follow
   // their default (Done collapsed on a narrow window).
@@ -323,7 +490,7 @@ export function App() {
 
   useEffect(() => {
     if (!message) return;
-    const timer = window.setTimeout(() => setMessage(null), message.tone === "refusal" ? 14_000 : 5_000);
+    const timer = window.setTimeout(() => setMessage(null), message.tone === "refusal" ? 14_000 : message.undo ? 12_000 : 5_000);
     return () => window.clearTimeout(timer);
   }, [message]);
 
@@ -340,6 +507,23 @@ export function App() {
     setDetails((previous) => ({ ...previous, [key]: result.card }));
     setBoard((previous) => withCard(previous, result.summary));
   }, []);
+
+  const runBatch = useCallback(
+    async (input: BatchInput): Promise<BatchPayload | null> => {
+      setBulkBusy(true);
+      try {
+        const payload = await api.batch(input);
+        setBoard((previous) => payload.results.reduce((current, result) => (result.summary ? withCard(current, result.summary) : current), previous));
+        return payload;
+      } catch (error) {
+        say(wordsOf(error), "refusal");
+        return null;
+      } finally {
+        setBulkBusy(false);
+      }
+    },
+    [say]
+  );
 
   const perform = useCallback(
     async (key: string, work: () => Promise<WritePayload>): Promise<string | null> => {
@@ -456,23 +640,54 @@ export function App() {
         return refused;
       },
       archive: (key: string) => setConfirm(key),
+      unarchive: (key: string) => {
+        void (async () => {
+          const card = board?.cards.find((entry) => keyOf(entry.id) === key);
+          const payload = await runBatch({ ...(board ? { as: board.person.id } : {}), operation: "unarchive", ids: [key], ...(card ? { expectUpdated: { [key]: card.updated } } : {}) });
+          if (!payload) return;
+          const result = payload.results[0];
+          if (result?.refused) say(`#${key} ${result.refused.reason}.`, "refusal");
+          else {
+            say(`Brought #${key} back to the board.`);
+            void loadDetail(key, true);
+          }
+        })();
+      },
       openRelated: (key: string) => openCard(key, "push"),
       back: popPanel,
       crumb: (index: number) => setStack((previous) => previous.slice(0, index + 1)),
       close: () => setStack([])
     }),
-    [perform, say, openCard, popPanel]
+    [perform, say, openCard, popPanel, board, runBatch, loadDetail]
   );
 
   // ------------------------------------------------------------------------------------------
   // The keyboard: `/` search, `n` new card, `j`/`k` (and the arrows) through a column, `h`/`l`
   // across columns, Enter opens, `m` moves, Esc closes what is on top.
 
+  // The board as the project shown narrows it: every column, its counts, the search.
+  const scoped = useMemo(() => (board && project !== "" ? { ...board, cards: board.cards.filter((card) => inProject(card, project)) } : board), [board, project]);
+
   const navigable = useMemo(() => {
-    if (!board) return [] as string[][];
-    const shown = board.cards.filter((card) => onBoard(card, filter));
-    return board.columns.filter((column) => !collapsed.has(column.id)).map((column) => columnCards(shown, column.id).filter((card) => matches(card, filter)).map((card) => keyOf(card.id)));
-  }, [board, filter, collapsed]);
+    if (!scoped) return [] as string[][];
+    const shown = scoped.cards.filter((card) => onBoard(card, filter));
+    return scoped.columns.filter((column) => !collapsed.has(column.id)).map((column) => columnCards(shown, column.id).filter((card) => matches(card, filter)).map((card) => keyOf(card.id)));
+  }, [scoped, filter, collapsed]);
+
+  /** Every column's cards on the board, top first (collapsed columns too): the pick's order, and what it may hold. */
+  const columnsShown = useMemo(() => {
+    if (!scoped) return [] as string[][];
+    const shown = scoped.cards.filter((card) => onBoard(card, filter));
+    return scoped.columns.map((column) => columnCards(shown, column.id).filter((card) => filter.show !== "hide" || matches(card, filter)).map((card) => keyOf(card.id)));
+  }, [scoped, filter]);
+
+  // The pick follows the board: a card that left it (archived, removed, outside the project) leaves the pick.
+  useEffect(() => {
+    const shown = new Set(columnsShown.flat());
+    setPicked((previous) => prune(previous, shown));
+  }, [columnsShown]);
+
+  const pickedInOrder = useMemo(() => inBoardOrder(picked, columnsShown), [picked, columnsShown]);
 
   const focusTile = useCallback(
     (key: string) => {
@@ -519,6 +734,8 @@ export function App() {
     const onKey = (event: KeyboardEvent): void => {
       if (event.defaultPrevented || event.isComposing || confirm) return;
       const target = event.target instanceof HTMLElement ? event.target : null;
+      // A dialog (the bulk bar's) answers its own keys.
+      if (target?.closest("dialog[open]")) return;
       const typing = target?.closest("input, textarea, select, [contenteditable='true']") != null;
       if (event.key === "Escape") {
         if (moving) setMoving(null);
@@ -529,7 +746,8 @@ export function App() {
         else if (stackRef.current.length > 0) {
           popPanel();
           if (stackRef.current.length === 1 && selected) window.setTimeout(() => tileRefs.get(selected)?.focus(), 0);
-        } else if (selected) {
+        } else if (picked.size > 0) setPicked(new Set());
+        else if (selected) {
           setSelected(null);
           target?.blur();
         } else return;
@@ -582,6 +800,13 @@ export function App() {
           event.preventDefault();
           across(1);
           return;
+        case "x":
+          // Picks the card the keyboard is on for a bulk change, or takes it out of the pick.
+          if (panelOpen || !onTile || !selected) return;
+          event.preventDefault();
+          anchor.current = selected;
+          setPicked((previous) => toggle(previous, selected));
+          return;
         case "Enter":
         case " ":
         case "o":
@@ -595,9 +820,159 @@ export function App() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [board, navigable, selected, moving, capsule, keys, composer, confirm, focusTile, openCard, popPanel, compose, tileRefs]);
+  }, [board, navigable, selected, moving, capsule, keys, composer, confirm, focusTile, openCard, popPanel, compose, tileRefs, picked]);
 
   // ------------------------------------------------------------------------------------------
+
+  // Bulk changes: one operation on the picked cards, each card's write its own (POST /api/cards/batch);
+  // what happened comes back as one message, with an Undo that puts back what was changed.
+
+  const updatedOf = useCallback(
+    (keys: string[]): Record<string, string> => {
+      const out: Record<string, string> = {};
+      for (const key of keys) {
+        const card = board?.cards.find((entry) => keyOf(entry.id) === key);
+        if (card) out[key] = card.updated;
+      }
+      return out;
+    },
+    [board]
+  );
+
+  /** An Undo: runs the work that puts things back, then says how it went. */
+  const undoing = useCallback(
+    (work: () => Promise<{ done: number; refused: string[] } | null>, words: string) => async () => {
+      setMessage(null);
+      const result = await work();
+      if (!result) return;
+      say(
+        result.refused.length > 0 ? `Undone: ${result.done} ${words}, ${result.refused.length} refused: ${result.refused.join("; ")}.` : `Undone: ${result.done} ${words}.`,
+        result.refused.length > 0 ? "refusal" : "info"
+      );
+    },
+    [say]
+  );
+
+  /** A batch that puts things back, as an Undo's work. */
+  const undoBatch = useCallback(
+    async (inputs: BatchInput[]): Promise<{ done: number; refused: string[] } | null> => {
+      let done = 0;
+      const refused: string[] = [];
+      for (const input of inputs) {
+        const back = await runBatch(input);
+        if (!back) return null;
+        done += back.changed;
+        for (const result of back.results) if (result.refused) refused.push(`#${String(result.id)} ${result.refused.reason}`);
+      }
+      return { done, refused };
+    },
+    [runBatch]
+  );
+
+  const changedOf = (payload: BatchPayload) => payload.results.filter((result) => result.outcome === "changed");
+  const freshOf = (results: BatchPayload["results"]): Record<string, string> => Object.fromEntries(results.flatMap((result) => (result.summary ? [[keyOf(result.id), result.summary.updated]] : [])));
+
+  const bulkMove = useCallback(
+    async (keys: string[], to: string, after?: string | null) => {
+      if (!board || keys.length === 0) return;
+      const placesBefore = new Map(board.cards.map((card) => [keyOf(card.id), { column: board.columns.findIndex((column) => column.id === card.column), rank: card.rank }]));
+      const payload = await runBatch({ as: board.person.id, operation: "move", ids: keys, to, ...(after !== undefined ? { after } : {}), expectUpdated: updatedOf(keys) });
+      if (!payload) return;
+      const target = columnName(board, to);
+      const moved = changedOf(payload);
+      const undo =
+        moved.length === 0
+          ? undefined
+          : undoing(async () => {
+              // Each card back to its column and its place there, each column top first: a card's neighbour above is back before it.
+              const order = [...moved].sort((left, right) => {
+                const a = placesBefore.get(keyOf(left.id));
+                const b = placesBefore.get(keyOf(right.id));
+                return (a?.column ?? 0) - (b?.column ?? 0) || (b?.rank ?? 0) - (a?.rank ?? 0);
+              });
+              let done = 0;
+              const refused: string[] = [];
+              setBulkBusy(true);
+              try {
+                for (const result of order) {
+                  const key = keyOf(result.id);
+                  if (!result.before) continue;
+                  try {
+                    applyWrite(await api.move(key, result.before.column, result.summary?.updated, undefined, result.before.above === null ? null : keyOf(result.before.above)));
+                    done += 1;
+                  } catch (error) {
+                    refused.push(`#${key} ${error instanceof Refused && error.stale ? "changed since it was moved" : wordsOf(error)}`);
+                  }
+                }
+              } finally {
+                setBulkBusy(false);
+              }
+              return { done, refused };
+            }, "moved back");
+      say(bulkReport(payload, `moved to ${target}`, `already in ${target}`), payload.refused > 0 ? "refusal" : "info", undo);
+    },
+    [board, runBatch, updatedOf, undoing, applyWrite, say]
+  );
+
+  const bulkArchive = useCallback(
+    async (keys: string[]) => {
+      if (!board || keys.length === 0) return;
+      const payload = await runBatch({ as: board.person.id, operation: "archive", ids: keys, expectUpdated: updatedOf(keys) });
+      if (!payload) return;
+      const archived = changedOf(payload);
+      const gone = new Set(archived.map((result) => keyOf(result.id)));
+      setStack((previous) => previous.filter((key) => !gone.has(key)));
+      const undo = archived.length === 0 ? undefined : undoing(() => undoBatch([{ as: board.person.id, operation: "unarchive", ids: archived.map((result) => result.id), expectUpdated: freshOf(archived) }]), "brought back to the board");
+      say(bulkReport(payload, "archived", "archived already"), payload.refused > 0 ? "refusal" : "info", undo);
+    },
+    [board, runBatch, updatedOf, undoing, undoBatch, say]
+  );
+
+  const bulkTag = useCallback(
+    async (keys: string[], tag: string, add: boolean) => {
+      if (!board || keys.length === 0) return;
+      const payload = await runBatch({ as: board.person.id, operation: "tags", ids: keys, ...(add ? { add: [tag] } : { remove: [tag] }), expectUpdated: updatedOf(keys) });
+      if (!payload) return;
+      const changed = changedOf(payload);
+      const undo =
+        changed.length === 0
+          ? undefined
+          : undoing(() => undoBatch([{ as: board.person.id, operation: "tags", ids: changed.map((result) => result.id), ...(add ? { remove: [tag] } : { add: [tag] }), expectUpdated: freshOf(changed) }]), add ? `untagged ${tag}` : `tagged ${tag} again`);
+      say(bulkReport(payload, add ? `tagged ${tag}` : `untagged ${tag}`, add ? "had it already" : "did not have it"), payload.refused > 0 ? "refusal" : "info", undo);
+    },
+    [board, runBatch, updatedOf, undoing, undoBatch, say]
+  );
+
+  const bulkProject = useCallback(
+    async (keys: string[], name: string, replace: boolean) => {
+      if (!board || keys.length === 0) return;
+      const payload = await runBatch({ as: board.person.id, operation: "project", ids: keys, project: name, replace, expectUpdated: updatedOf(keys) });
+      if (!payload) return;
+      const changed = changedOf(payload);
+      // Each card's own way back: the tags its write added come off, the ones it removed go back.
+      const groups = new Map<string, BatchInput>();
+      for (const result of changed) {
+        const tagsOf = (kind: string): string[] => (result.events ?? []).filter((event) => event.kind === kind).map((event) => String(event.data?.tag ?? ""));
+        const add = tagsOf("tag.removed");
+        const remove = tagsOf("tag.added");
+        const group = JSON.stringify([add, remove]);
+        const input = groups.get(group) ?? { as: board.person.id, operation: "tags", ids: [], ...(add.length > 0 ? { add } : {}), ...(remove.length > 0 ? { remove } : {}), expectUpdated: {} };
+        input.ids.push(result.id);
+        if (result.summary) input.expectUpdated![keyOf(result.id)] = result.summary.updated;
+        groups.set(group, input);
+      }
+      const undo = changed.length === 0 ? undefined : undoing(() => undoBatch([...groups.values()]), "put back in their projects");
+      say(bulkReport(payload, `set to the project ${name}`, `in ${name} already`), payload.refused > 0 ? "refusal" : "info", undo);
+    },
+    [board, runBatch, updatedOf, undoing, undoBatch, say]
+  );
+
+  const pick = useCallback((key: string, how: "toggle" | "extend", column: string[]) => {
+    // The anchor as it was: the updater runs later, after the anchor has moved to this card.
+    const from = anchor.current;
+    setPicked((previous) => (how === "extend" ? extend(previous, from, key, column) : toggle(previous, key)));
+    anchor.current = key;
+  }, []);
 
   // A click on the board outside the panels closes them: the whole stack, since a click on the board
   // is a way back to the board (Esc and ‹ Back step back one card at a time). A press that turns
@@ -620,7 +995,8 @@ export function App() {
 
   const cardIds = useMemo(() => new Set((board?.cards ?? []).map((card) => keyOf(card.id))), [board?.cards]);
   const knownTags = useMemo(() => [...new Set((board?.cards ?? []).flatMap((card) => card.tags))].sort(), [board?.cards]);
-  const shown = board ? board.cards.filter((card) => onBoard(card, filter)) : [];
+  const projects = useMemo(() => (board ? projectEntries(board.cards, lastColumnOf(board)) : []), [board]);
+  const shown = scoped ? scoped.cards.filter((card) => onBoard(card, filter)) : [];
   const matching = shown.filter((card) => matches(card, filter)).length;
   const titleOf = (key: string): string => details[key]?.card.title ?? board?.cards.find((card) => keyOf(card.id) === key)?.title ?? "";
 
@@ -629,8 +1005,8 @@ export function App() {
       <TopBar
         board={board}
         live={live}
-        theme={theme}
-        onTheme={setTheme}
+        projectMenu={board ? <ProjectMenu entries={projects} project={project} onPick={chooseProject} /> : null}
+        themeMenu={<ThemeMenu choices={themeChoices} shown={shownTheme} project={project} own={ownChoices} onPick={pickChoices} onUseDefault={useDefaultChoices} />}
         notes={notes}
         open={capsule}
         onToggle={setCapsule}
@@ -643,7 +1019,7 @@ export function App() {
         onClearAll={() => void clearAll()}
         now={now}
       />
-      {board ? <FilterBar board={board} filter={filter} onChange={setFilter} matching={matching} total={shown.length} searchRef={searchRef} /> : null}
+      {scoped ? <FilterBar board={scoped} filter={filter} onChange={setFilter} matching={matching} total={shown.length} searchRef={searchRef} /> : null}
       {board && board.unreadable.length > 0 ? (
         <p className="banner banner-warn page-banner" role="alert">
           {board.unreadable.length === 1 ? "A file" : `${board.unreadable.length} files`} in items/ cannot be read as a card:{" "}
@@ -651,9 +1027,9 @@ export function App() {
         </p>
       ) : null}
       <div className="workspace" onPointerDown={onWorkspacePointerDown} onClick={onWorkspaceClick}>
-        {board ? (
+        {board && scoped ? (
           <BoardView
-            board={board}
+            board={scoped}
             filter={filter}
             unseen={notes?.unseenByCard ?? {}}
             addressed={notes?.addressedByCard ?? {}}
@@ -668,6 +1044,15 @@ export function App() {
               if (key) window.setTimeout(() => tileRefs.get(key)?.focus(), 0);
             }}
             onDrop={(key, to, after) => void moveCard(key, to, after)}
+            onDropMany={(keys, to, after) => void bulkMove(keys, to, after)}
+            picked={picked}
+            onPick={pick}
+            onPickColumn={(keys) => {
+              setPicked((previous) => (keys === null ? new Set() : selectAll(previous, keys)));
+              if (keys && keys.length > 0) anchor.current = keys[keys.length - 1]!;
+            }}
+            pickedInOrder={pickedInOrder}
+            newCardTags={projectTags(project)}
             composer={composer}
             onCompose={compose}
             onCreate={createCard}
@@ -712,9 +1097,29 @@ export function App() {
           </div>
         ) : null}
       </div>
+      {board && picked.size > 0 ? (
+        <BulkBar
+          board={board}
+          picked={pickedInOrder}
+          projects={projects.filter((entry) => entry.name !== "" && entry.name !== NO_PROJECT).map((entry) => entry.name)}
+          knownTags={knownTags}
+          busy={bulkBusy}
+          onMove={(to) => void bulkMove(pickedInOrder, to)}
+          onArchive={() => void bulkArchive(pickedInOrder)}
+          onAddTag={(tag) => void bulkTag(pickedInOrder, tag, true)}
+          onRemoveTag={(tag) => void bulkTag(pickedInOrder, tag, false)}
+          onSetProject={(name, replace) => void bulkProject(pickedInOrder, name, replace)}
+          onClear={() => setPicked(new Set())}
+        />
+      ) : null}
       {message ? (
-        <div className={classes("message", `message-${message.tone}`)} role={message.tone === "refusal" ? "alert" : "status"} data-testid="message">
+        <div className={classes("message", `message-${message.tone}`, picked.size > 0 && "message-above-bar")} role={message.tone === "refusal" ? "alert" : "status"} data-testid="message">
           <span>{message.text}</span>
+          {message.undo ? (
+            <button type="button" className="text-button message-undo" onClick={message.undo} disabled={bulkBusy} data-testid="undo">
+              Undo
+            </button>
+          ) : null}
           <button type="button" className="text-button" onClick={() => setMessage(null)}>
             Dismiss
           </button>

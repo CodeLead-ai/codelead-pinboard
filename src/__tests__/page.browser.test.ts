@@ -315,28 +315,43 @@ describe.skipIf(!browser)("the board's page in a browser", () => {
     await expect.poll(() => page.getByTestId("panel").count()).toBe(0);
   });
 
-  it("renders dark by the system and switches with the toggle", async () => {
+  it("renders dark by the system, and the theme menu picks a theme for all projects, kept in the board's preferences", async () => {
     // Expressions, not functions: this file is checked without the DOM's types (as the repository's other browser tests are).
     const background = async (): Promise<string> => String(await page.evaluate("getComputedStyle(document.body).backgroundColor"));
+    const stored = (): unknown => {
+      try {
+        return (JSON.parse(fs.readFileSync(path.join(dir, ".local", "preferences.json"), "utf8")) as { default: { theme: string } }).default.theme;
+      } catch {
+        return undefined;
+      }
+    };
     expect(await background()).toBe("rgb(243, 246, 251)");
     await page.emulateMedia({ colorScheme: "dark" });
     await expect.poll(background).toBe("rgb(6, 11, 24)");
     expect(await page.evaluate("getComputedStyle(document.querySelector(\".tile[data-card='1']\")).backgroundColor")).toBe("rgb(13, 21, 38)");
+    expect(await page.locator("html").getAttribute("data-theme")).toBe("navy");
     await shot("board-dark");
     await tile(1).click();
     await page.getByTestId("panel").locator(".panel-title").waitFor();
     await shot("panel-dark");
     await page.keyboard.press("Escape");
-    // system → light → dark → system
+    // The menu: Paper, though the system is dark; then System again, which follows the system.
     await page.getByTestId("theme").click();
+    await page.getByTestId("theme-menu").waitFor();
+    expect(await page.getByTestId("theme-for").textContent()).toBe("for all projects");
+    expect(await page.locator("[data-theme-option='system']").getAttribute("aria-checked")).toBe("true");
+    await page.locator("[data-theme-option='paper']").click();
     await expect.poll(background).toBe("rgb(243, 246, 251)");
-    expect(await page.locator("html").getAttribute("data-theme")).toBe("light");
-    await page.emulateMedia({ colorScheme: "light" });
-    await page.getByTestId("theme").click();
+    expect(await page.locator("html").getAttribute("data-theme")).toBe("paper");
+    await expect.poll(stored).toBe("paper");
+    expect(fs.readFileSync(path.join(dir, ".gitignore"), "utf8")).toContain(".local/");
+    await page.locator("[data-theme-option='system']").click();
     await expect.poll(background).toBe("rgb(6, 11, 24)");
-    await page.getByTestId("theme").click();
+    await expect.poll(stored).toBe("system");
+    await page.emulateMedia({ colorScheme: "light" });
     await expect.poll(background).toBe("rgb(243, 246, 251)");
-    expect(await page.locator("html").getAttribute("data-theme")).toBeNull();
+    await page.keyboard.press("Escape");
+    await expect.poll(() => page.getByTestId("theme-menu").count()).toBe(0);
   });
 
   // Package 3a, the mentions: on cards of their own, so that they run alone too (`-t mention`).

@@ -84,8 +84,8 @@ describe("the package's boundary", () => {
     expect(Object.keys(MANIFEST.dependencies ?? {})).toEqual(["commander"]);
   });
 
-  it("the page imports its own modules, its libraries, and of the rest only the core's rule of mentions and the process's contract", () => {
-    const files = sourcesUnder(path.join(PAGE, "src"), [".tsx", ".ts"]);
+  it("the page imports its own modules, its libraries, and of the rest only the core's rule of mentions, its catalogue of themes and the process's contract", () => {
+    const files = sourcesUnder(path.join(PAGE, "src"), [".tsx", ".ts", ".mts"]);
     expect(files.length).toBeGreaterThan(5);
     const seen = new Set<string>();
     for (const file of files) {
@@ -94,7 +94,7 @@ describe("the package's boundary", () => {
         seen.add(specifier.startsWith(".") ? path.relative(SRC, path.resolve(path.dirname(file), specifier)) : packageOf(specifier));
       }
     }
-    expect([...seen].sort()).toEqual([path.join("core", "mentions.js"), "dompurify", "marked", "react", "react-dom", path.join("server", "contract.js")].sort());
+    expect([...seen].sort()).toEqual([path.join("core", "mentions.js"), path.join("core", "themes.js"), "dompurify", "marked", "react", "react-dom", path.join("server", "contract.js")].sort());
   });
 
   it("would see an import from outside (the check itself is checked)", () => {

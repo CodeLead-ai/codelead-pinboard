@@ -1,19 +1,17 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import type { BoardPayload, NotificationsPayload } from "../../server/contract.js";
-import { BellIcon, BrandMark, KeysIcon, MoonIcon, SunIcon, SystemIcon, TypeChip } from "./icons.js";
+import { BellIcon, BrandMark, KeysIcon, TypeChip } from "./icons.js";
 import { ago, classes, columnName, plural } from "./model.js";
 
-export type ThemeChoice = "system" | "light" | "dark";
 export type LiveState = "connecting" | "live" | "offline";
-
-const THEME_NEXT: Record<ThemeChoice, ThemeChoice> = { system: "light", light: "dark", dark: "system" };
-const THEME_WORDS: Record<ThemeChoice, string> = { system: "follows the system", light: "light", dark: "dark" };
 
 export interface TopBarProps {
   board: BoardPayload | null;
   live: LiveState;
-  theme: ThemeChoice;
-  onTheme: (next: ThemeChoice) => void;
+  /** The project selector, at the left after the brand. */
+  projectMenu: ReactNode;
+  /** The theme and background menu. */
+  themeMenu: ReactNode;
   notes: NotificationsPayload | null;
   open: boolean;
   onToggle: (open: boolean) => void;
@@ -32,6 +30,7 @@ const SHORTCUTS: Array<[string[], string]> = [
   [["h", "l"], "the column before and after"],
   [["Enter"], "open the card"],
   [["m"], "move the card: then a column's number"],
+  [["x"], "select the card for a bulk change (or ⌘-click)"],
   [["Esc"], "close what is on top"],
   [["⌘", "↵"], "save, or send the comment"],
   [["?"], "this list"]
@@ -43,7 +42,7 @@ const LIVE_WORDS: Record<LiveState, [string, string]> = {
   offline: ["offline", "The board's process does not answer. Is `codelead board serve` still running? The page reconnects on its own."]
 };
 
-export function TopBar({ board, live, theme, onTheme, notes, open, onToggle, keys, onKeys, onOpenCard, onClearAll, now }: TopBarProps) {
+export function TopBar({ board, live, projectMenu, themeMenu, notes, open, onToggle, keys, onKeys, onOpenCard, onClearAll, now }: TopBarProps) {
   const count = notes?.count ?? 0;
   const wrap = useRef<HTMLDivElement>(null);
   const keysWrap = useRef<HTMLDivElement>(null);
@@ -66,7 +65,6 @@ export function TopBar({ board, live, theme, onTheme, notes, open, onToggle, key
     return () => document.removeEventListener("pointerdown", away);
   }, [keys, onKeys]);
 
-  const ThemeIcon = theme === "light" ? SunIcon : theme === "dark" ? MoonIcon : SystemIcon;
   const [liveWord, liveTitle] = LIVE_WORDS[live];
 
   return (
@@ -79,6 +77,7 @@ export function TopBar({ board, live, theme, onTheme, notes, open, onToggle, key
           <span className="live-dot" aria-hidden="true" />
           {liveWord}
         </span>
+        {projectMenu}
       </div>
       <div className="topbar-end">
         {board ? (
@@ -108,16 +107,7 @@ export function TopBar({ board, live, theme, onTheme, notes, open, onToggle, key
             </div>
           ) : null}
         </div>
-        <button
-          type="button"
-          className="icon-button"
-          onClick={() => onTheme(THEME_NEXT[theme])}
-          title={`Theme: ${THEME_WORDS[theme]}. Click for ${THEME_WORDS[THEME_NEXT[theme]]}.`}
-          aria-label={`Theme: ${THEME_WORDS[theme]}`}
-          data-testid="theme"
-        >
-          <ThemeIcon size={17} />
-        </button>
+        {themeMenu}
         <div className="capsule-wrap" ref={wrap}>
           <button
             type="button"
