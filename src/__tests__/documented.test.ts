@@ -125,12 +125,12 @@ async function page(term: Terminal): Promise<<T>(method: string, route: string, 
 
 const QUEUE_REFUSED = "Refused: claude is an agent and may not tag a card for:codelead: the person queues a card for CodeLead; ask in the thread. Nothing was written.";
 const COLOUR_REFUSED = "Refused: claude is an agent and may not set a card's colour: the colour is the person's own mark. Nothing was written.";
-const outOf = (who: string, column: string): string =>
-  `Refused: ${who} is an agent and may not move a card out of ${column} (a person's column): the person moves it from there; ask in the thread. Nothing was written.`;
+const INTO = (column: string): string =>
+  `Refused: claude is an agent and may not move a card into ${column} (a person's column); an agent may move a card into Inbox, Backlog, Ideas, In progress, For review. Nothing was written.`;
 
 // ---------------------------------------------------------------------------------------------
 
-describe("the guide's rules, enforced by the commands: each refusal exits 1, with its reason and the way out", () => {
+describe("the guide's rules: the tag and the colour refused by the commands (exit 1, the reason and the way out); the move out of Pinned a convention", () => {
   it("an agent does not tag a card for:codelead; CodeLead itself and the person do, the page's Send to CodeLead included", async () => {
     const term = await terminal();
     await runBoardNew({ as: "robin", type: "task", title: "One" }, term.deps);
@@ -183,34 +183,28 @@ describe("the guide's rules, enforced by the commands: each refusal exits 1, wit
     expect(getCard(term.ctx, 1).card.color).toBe("#b33f40");
   });
 
-  it("an agent moves no card out of Pinned or Done, as none into them; CodeLead itself takes the card the person handed it out of Pinned", async () => {
+  it("on purpose, an agent's move out of Pinned or Done is not refused (a convention, as the move into In progress): only a move into them is", async () => {
+    // The work flow needs it: the person pins a card, asks for it in the session, and the agent's first step moves it to In progress.
     const term = await terminal();
     await runBoardNew({ as: "robin", type: "task", title: "Pinned one", column: "pinned" }, term.deps);
     await runBoardNew({ as: "robin", type: "task", title: "Done one", column: "done" }, term.deps);
-    await runBoardNew({ as: "robin", type: "task", title: "Pinned two", column: "pinned" }, term.deps);
-    await runBoardNew({ as: "robin", type: "task", title: "In the inbox" }, term.deps);
     term.said();
+    term.tick();
+    expect(await runBoardMove("1", { as: "claude", to: "in-progress" }, term.deps)).toBe(0);
+    expect(await runBoardMove("2", { as: "claude", to: "for-review", comment: "Reopened: the person named it in the session." }, term.deps)).toBe(0);
+    expect(term.said()).toBe("Moved #1 from Pinned to In progress.\nMoved #2 from Done to For review, with the comment.");
+    const moves = readEvents(term.dir).events.map(({ event }) => event).filter((event) => event.kind === "item.moved");
+    expect(moves.map((event) => [event.by, event.item, event.data?.from, event.data?.to])).toEqual([
+      ["claude", 1, "pinned", "in-progress"],
+      ["claude", 2, "done", "for-review"]
+    ]);
 
-    expect(await runBoardMove("1", { as: "claude", to: "in-progress" }, term.deps)).toBe(1);
-    expect(term.said()).toBe(outOf("claude", "Pinned"));
-    expect(await runBoardMove("2", { as: "claude", to: "backlog", json: true }, term.deps)).toBe(1);
-    expect(JSON.parse(term.said())).toEqual({ refused: "column", message: outOf("claude", "Done") });
-    expect(await runBoardMove(["1", "3"], { as: "claude", to: "backlog" }, term.deps)).toBe(1);
-    expect(term.said()).toBe(["Moved to Backlog (0 changed, 2 refused):", `  #1 refused: ${outOf("claude", "Pinned")}`, `  #3 refused: ${outOf("claude", "Pinned")}`].join("\n"));
-    expect(getCard(term.ctx, 1).card.column).toBe("pinned");
-
-    // CodeLead works only a card the person handed it (the tag, or the card named in `implement --card`): it takes the card out
-    // of Pinned, as its queue does, tagged or not.
-    expect(await runBoardSet("1", { as: "robin", tag: ["for:codelead"] }, term.deps)).toBe(0);
-    expect(await runBoardMove("1", { as: "codelead", to: "in-progress", comment: "Started: the card is the request." }, term.deps)).toBe(0);
-    expect(term.said()).toBe("#1: tagged it for:codelead.\nMoved #1 from Pinned to In progress, with the comment.");
-    expect(await runBoardMove("3", { as: "codelead", to: "in-progress" }, term.deps)).toBe(0);
-    expect(await runBoardMove("3", { as: "robin", to: "pinned" }, term.deps)).toBe(0);
-    term.said();
-    // The person moves out of their columns as before; an agent into In progress is a convention, not checked.
-    expect(await runBoardMove("3", { as: "robin", to: "backlog" }, term.deps)).toBe(0);
-    expect(await runBoardMove("4", { as: "claude", to: "in-progress" }, term.deps)).toBe(0);
-    expect(term.said()).toBe("Moved #3 from Pinned to Backlog.\nMoved #4 from Inbox to In progress.");
+    // A move into a person's column by an agent: refused, as on main.
+    expect(await runBoardMove("1", { as: "claude", to: "pinned" }, term.deps)).toBe(1);
+    expect(term.said()).toBe(INTO("Pinned"));
+    expect(await runBoardMove("2", { as: "claude", to: "done", json: true }, term.deps)).toBe(1);
+    expect(JSON.parse(term.said())).toEqual({ refused: "column", message: INTO("Done") });
+    expect(getCard(term.ctx, 1).card.column).toBe("in-progress");
   });
 
   it("the guide says, for each of these rules, whether the commands refuse it", () => {
@@ -218,8 +212,12 @@ describe("the guide's rules, enforced by the commands: each refusal exits 1, wit
     const guide = agentsGuide(config).replace(/\n {2}/g, " ");
     expect(guide).toContain("`color` is the person's colour mark: leave it (the commands refuse it from an agent).");
     expect(guide).toContain("write your recommendation in `fields.ask`. The commands refuse it.");
-    expect(guide).toContain("- Move a card out of Pinned or Done: the commands refuse it, as they refuse a move into them.");
-    expect(guide).toContain("In progress (only when the person asked for the work in the session) and For review; add tags and relations; create cards. No command can tell whether the person asked for the work, so that rule is yours to keep.");
+    // The moves out of a person's column and into In progress: conventions, said as such.
+    expect(guide).toContain(
+      "In progress (only when the person asked for the work in the session) and For review; add tags and relations; create cards. Move a card out of Pinned or Done only when the person asked for it in the session (to start the work the person asked for, or to reopen a card the person named): no command can tell, so that rule, like the one for In progress, is yours to keep."
+    );
+    expect(guide).not.toContain("Move a card out of Pinned or Done: the commands refuse it");
+    expect(guide).toContain("CodeLead moves each card to In progress (out of Pinned too) and keeps the tag.");
     expect(guide).toContain("Agents do not add or remove the tag (the commands refuse an agent's adding it: ask the person in the thread)");
     expect(guide).toContain("The commands refuse such a text, a path that starts with `~/` included.");
   });

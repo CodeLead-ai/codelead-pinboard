@@ -10,13 +10,20 @@ import { EVENT_KINDS, type BoardConfig } from "./types.js";
 export function agentsGuide(config: BoardConfig): string {
   const moveTo = agentColumns(config).map((column) => (column.id === "in-progress" ? `${column.name} (only when the person asked for the work in the session)` : column.name));
   // That condition is a convention: no command can see what the person asked in a session.
-  const working = agentColumns(config).some((column) => column.id === "in-progress");
+  const working = agentColumns(config).find((column) => column.id === "in-progress")?.name;
   const personColumns = config.columns.filter((column) => column.owner === "person").map((column) => column.name);
+  // A move out of a person's column is a convention too: the person asked for the work in the session, or named the card.
+  const asked =
+    personColumns.length > 0
+      ? ` Move a card out of ${listOf(personColumns, "or")} only when the person asked for it in the session (to start the work the person asked for, or to reopen a card the person named): no command can tell, so that rule${working ? `, like the one for ${working},` : ""} is yours to keep.`
+      : working
+        ? " No command can tell whether the person asked for the work, so that rule is yours to keep."
+        : "";
   const first = config.columns[0]?.name ?? "the first column";
   const review = config.columns.find((column) => column.id === "for-review")?.name ?? "the review column";
   const done = config.columns.find((column) => column.id === "done")?.name;
   const minutes = intervalMinutes(config);
-  const list = (items: string[], last = "and"): string => (items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} ${last} ${items[items.length - 1]}`);
+  const list = listOf;
   // Where the cards of a conversation land: the first column, and the backlog when the board has one.
   const backlog = config.columns.find((column) => column.id === "backlog")?.name;
   const intake = list([...new Set([first, ...(backlog !== undefined ? [backlog] : [])])], "or");
@@ -61,7 +68,7 @@ An event with \`data.decided\` is the person's answer to a decision card, record
 - When the person asks to turn a conversation into cards: a card per decision, task, question or idea, its description standing on its own (what, why, where it came from and when), related to the others and to the cards it touches, tagged \`by:<you>\` and \`source:conversation\`, in ${intake}; show the person the list, and create them on their yes.
 - On a decision, \`fields.ask\` says what the person is asked to decide, the options and your recommendation, in one to three sentences; \`color\` is the person's colour mark: leave it (the commands refuse it from an agent).
 - Never set a decision's \`fields.decided\`: the decision is the person's; write your recommendation in \`fields.ask\`. The commands refuse it.
-- You may move a card into ${list(moveTo)}; add tags and relations; create cards.${working ? " No command can tell whether the person asked for the work, so that rule is yours to keep." : ""}
+- You may move a card into ${list(moveTo)}; add tags and relations; create cards.${asked}
 - Every change gets its event line, \`by\` you. Times are UTC: \`2026-10-03T00:52:10Z\`.
 
 ## Never
@@ -71,12 +78,16 @@ An event with \`data.decided\` is the person's answer to a decision card, record
 - Write secrets (keys, passwords, tokens), names the project keeps private
   (\`${PRIVATE_NAMES_FILE}\`), or paths of your machine (\`<home>/…\`, \`C:\\…\`) into a card. Cite files
   by their path in the repository, or \`<repository>:<path>\` for another repository. The commands refuse such a text, a path that starts with \`~/\` included.
-- Move a card out of ${list(personColumns, "or") || "a person's column"}: the commands refuse it, as they refuse a move into ${personColumns.length === 1 ? "it" : "them"}.
 
 ## Work the person asked for
 When it is done: comment with what landed (the commit, the evidence record's id, the files),
 and move the card to ${review}.${done ? ` The person moves it to ${done}.` : ""} A comment that starts with \`Landed:\` fills the task's \`landed\` field (its first line) by itself.
 ${codeleadSection(config)}`);
+}
+
+/** A list in words: "a", "a and b", "a, b and c" (or "or" for the last). */
+function listOf(items: string[], last = "and"): string {
+  return items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} ${last} ${items[items.length - 1]}`;
 }
 
 /** Guidance for a board CodeLead joined, including boards with only the legacy queue column. */
@@ -90,9 +101,9 @@ function codeleadSection(config: BoardConfig): string {
   const review = config.columns.find((column) => column.id === "for-review")?.name ?? "the review column";
   const personColumns = config.columns.filter((column) => column.owner === "person").map((column) => column.name);
   const never = personColumns.length === 0 ? "a person's column" : personColumns.length === 1 ? personColumns[0]! : `${personColumns.slice(0, -1).join(", ")} or ${personColumns[personColumns.length - 1]}`;
-  // A person's column the queue takes from (Pinned): CodeLead takes a card out of it, the person having handed the card over.
+  // A person's column the queue takes from (Pinned): a tagged card there is taken too.
   const takenFrom = config.columns.filter((column) => column.owner === "person" && !["in-progress", "for-review", "done"].includes(column.id)).map((column) => column.name);
-  const outOf = takenFrom.length === 0 ? "" : ` (out of ${takenFrom.length < 2 ? takenFrom.join("") : `${takenFrom.slice(0, -1).join(", ")} or ${takenFrom[takenFrom.length - 1]}`} too: the person handed the card over)`;
+  const outOf = takenFrom.length === 0 ? "" : ` (out of ${listOf(takenFrom, "or")} too)`;
   return wrapLong(`
 ## CodeLead on the board
 CodeLead takes part as the participant \`codelead\` (an agent), on every card it works, in the session (\`/implement --card <id>\`) and unattended (\`codelead implement --card <id>\`, \`codelead implement --queue\`). The card is the request: its title, its description, the person's comments (as clarifications), its related cards and attachments.

@@ -171,7 +171,8 @@ served to this machine only. Leave the terminal running; if it stops, run the co
   write, alone or side by side, like the description); type `@` to address someone
   (`@claude`): their next check lists that card first.
 - **Move cards** by dragging. **Pinned** and **Done** are yours alone: no agent moves a card
-  into them or out of them (CodeLead itself takes a card you hand it out of Pinned).
+  into them. An agent moves one out of them only when you asked for that card in its session
+  (to start the work, or to reopen it): a convention of `AGENTS.md`, since no command can tell.
 - **Decide:** a decision card shows the ask on its face; your answer goes in its `decided`
   field, and the agent's next check lists it under "Decided".
 - **Tags, relations, attachments, a colour mark** (yours: no agent sets it) on each card;
@@ -554,7 +555,7 @@ gives the same commands under its own name (`codelead board …`).
 | `show <id>` | One card: fields, relations both ways, attachments, description, thread. |
 | `new --as <you>` | Creates a card (`--type`, `--title`, `--body`, `--field`, …), or every card of a markdown file (`--batch`), all or none. `--dry-run` writes nothing. |
 | `reply <id> --as <you>` | Appends a comment (`--text` or `--file`). |
-| `move <id…> --to <column> --as <you>` | Moves a card, or several (they keep their order); an agent only into `agents.mayMoveTo`, and never out of a person's column. |
+| `move <id…> --to <column> --as <you>` | Moves a card, or several (they keep their order); an agent only into `agents.mayMoveTo`. |
 | `set <id…> --as <you>` | Changes the title (`--title`), the description (`--body`, `--body-file`), the type (`--type`), tags, relations, attachments (`--attach <path[:lines]>`), the status line, the colour, the fields of a card, or the same on several (a title or a description: one card only). |
 | `archive <id…> --as <person>` | Archives cards: they leave the board and stay in their files. A person only. |
 | `unarchive <id…> --as <person>` | Brings archived cards back to their columns. A person only. |
@@ -586,7 +587,7 @@ Every refusal, by the code `--json` gives it:
 | `board-exists` | 1 | `init` where a board already is. |
 | `participant` | 1 | `--as` names no participant of the board. |
 | `not-allowed` | 1 | The participant may not do it: an agent archives, creates on a board whose `agents.mayCreate` is false, sets a card's colour, or tags a card `for:codelead` (CodeLead itself may); an agent imports. |
-| `column` | 1 | No such column; an agent moves or creates a card in a column it may not, or moves one out of a person's column (CodeLead itself may). |
+| `column` | 1 | No such column; an agent moves or creates a card in a column it may not (a person's column, or one not in `agents.mayMoveTo`). |
 | `type` | 1 | No such card type. |
 | `decision` | 1 | An agent sets or removes a decision; a decision that is not the option chosen, by a participant, on a day; an ask that is not one to three sentences. |
 | `color` | 1 | A colour that is none of the five. |

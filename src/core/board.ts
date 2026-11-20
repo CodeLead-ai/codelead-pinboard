@@ -67,8 +67,8 @@ import { sameValue, type YamlMap, type YamlValue } from "./yaml.js";
  * when a rule says no:
  *
  * - A card is changed only by a participant of the board; an agent moves or creates a card only
- *   into the columns `agents.mayMoveTo` lists and no person owns, and moves none out of a column a
- *   person owns (CodeLead itself may: it works only the cards the person hands it). The person's
+ *   into the columns `agents.mayMoveTo` lists and no person owns (a move out of a person's column is
+ *   a convention of AGENTS.md: no command can tell whether the person asked for it). The person's
  *   marks are the person's: an agent sets no decision and no colour, and tags no card
  *   `for:codelead` (the queue for CodeLead; CodeLead itself may).
  * - A write that names the `updated` it read is refused when the card's `updated` differs (a
@@ -684,22 +684,6 @@ function refuseAgentColor(participant: Participant): void {
   throw new BoardRefusal("not-allowed", `Refused: ${participant.id} is an agent and may not set a card's colour: the colour is the person's own mark. Nothing was written.`);
 }
 
-/**
- * A person's column (`owner: "person"`, Pinned and Done on a board `init` made) is the person's: an
- * agent moves no card into it (`requireMayEnter`) and none out of it. CodeLead itself may take a
- * card out of it: it works only a card the person handed it, by the tag `for:codelead` or by naming
- * the card (`implement --card <id>`), and its queue takes tagged cards from Pinned.
- */
-function requireMayLeave(config: BoardConfig, participant: Participant, card: Card, to: BoardColumn): void {
-  if (participant.kind === "person" || participant.id === CODELEAD_PARTICIPANT_ID || card.column === to.id) return;
-  const from = columnOf(config, card.column);
-  if (from?.owner !== "person") return;
-  throw new BoardRefusal(
-    "column",
-    `Refused: ${participant.id} is an agent and may not move a card out of ${from.name} (a person's column): the person moves it from there; ask in the thread. Nothing was written.`
-  );
-}
-
 export interface CreateOptions {
   /** Tag each card `by:<creator>`, as a card made with `new` is. Default: yes. */
   tagCreator?: boolean;
@@ -883,7 +867,6 @@ export function moveCard(
   return changeCard(ctx, id, input.as, input.expectUpdated, (card, config, participant, at, cards) => {
     const column = requireColumn(config, input.to);
     requireMayEnter(config, participant, column, "move a card into");
-    requireMayLeave(config, participant, card, column);
     const events: BoardEvent[] = [];
     let comment: Comment | undefined;
     if (input.comment !== undefined) {
