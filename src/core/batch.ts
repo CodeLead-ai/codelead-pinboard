@@ -1,6 +1,6 @@
 import { createCards, parseCardId, type BoardContext, type NewCardInput } from "./board.js";
 import { BoardRefusal } from "./errors.js";
-import { fencedLines, splitText } from "./text.js";
+import { fencedLines, splitText, withArticle } from "./text.js";
 import { TYPE_FIELDS, type BoardEvent, type Card, type CardId } from "./types.js";
 import { parseYamlMapping, YamlError, type YamlMap, type YamlValue } from "./yaml.js";
 
@@ -131,7 +131,7 @@ function readCard(lines: string[], start: number, end: number, source: string, d
     // The type's own fields only, as `new --field` takes them: a typo is refused, not written as a field of its own.
     const known = TYPE_FIELDS[type];
     for (const name of Object.keys(fields)) {
-      if (known && !known.includes(name)) fail(known.length === 0 ? `a ${type} has no fields; "${name}" is not one` : `"${name}" is not a field of a ${type} (${known.join(", ")})`);
+      if (known && !known.includes(name)) fail(known.length === 0 ? `${withArticle(type)} has no fields; "${name}" is not one` : `"${name}" is not a field of ${withArticle(type)} (${known.join(", ")})`);
     }
   }
 

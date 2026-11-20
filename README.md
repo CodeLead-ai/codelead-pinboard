@@ -67,6 +67,7 @@ practice three parties touch it, each in its own way:
 
 Choose **Send to CodeLead** on a card to add `for:codelead` without moving it; **Take back from CodeLead** removes the tag.
 The blue **CodeLead** badge follows the card through its columns, and the **For CodeLead** filter finds tagged cards across the board.
+The queue is yours to fill: the commands refuse an agent that adds the tag (CodeLead itself may).
 
 Everything below was run as written, on an empty repository called `my-app`, with one person
 (`robin`) and one agent (`claude`). The outputs are the commands' own.
@@ -170,11 +171,12 @@ served to this machine only. Leave the terminal running; if it stops, run the co
   write, alone or side by side, like the description); type `@` to address someone
   (`@claude`): their next check lists that card first.
 - **Move cards** by dragging. **Pinned** and **Done** are yours alone: no agent moves a card
-  into them.
+  into them or out of them (CodeLead itself takes a card you hand it out of Pinned).
 - **Decide:** a decision card shows the ask on its face; your answer goes in its `decided`
   field, and the agent's next check lists it under "Decided".
-- **Tags, relations, attachments, a colour mark** on each card; search by words or `#42`;
-  "what changed since you last looked"; keyboard shortcuts under `?`; "open in the editor".
+- **Tags, relations, attachments, a colour mark** (yours: no agent sets it) on each card;
+  search by words or `#42`; "what changed since you last looked"; keyboard shortcuts under `?`;
+  "open in the editor".
 - **The editor works too.** A card is a markdown file in `items/`; a file changed by hand is
   noticed at the next check.
 
@@ -236,17 +238,23 @@ step 2 and `AGENTS.md` tell it to; you see the result on the page.
   Refused: the comment holds a path of this machine outside the workspace (under the home
   folder); nothing was written. Cite the file by its path in a repository of the workspace
   instead, or give --rewrite-paths to write it as <home>/….
+
+  $ pinboard set 1 --tag for:codelead --as claude
+  Refused: claude is an agent and may not tag a card for:codelead: the person queues a card for
+  CodeLead; ask in the thread. Nothing was written.
   ```
 
-  Names the board must never hold go in `docs/codelead/board/private-names.txt`, one a line,
-  on each machine (git ignores it).
+  `~/notes/log.txt` gets the same answer as the full path. Each of these refusals exits 1 (the
+  table of exit codes is under "The commands"). Names the board must never hold go in
+  `docs/codelead/board/private-names.txt`, one a line, on each machine (git ignores it).
 
 ### Projects, themes and bulk operations
 
 **Projects.** A project is a tag on a card: `repo:<name>`, as `repo:api`.
 
 - The selector at the left of the top bar lists every project on the board, with how many of
-  its cards are still open (not done, not archived).
+  its cards are still open: not archived, and not in the board's last column (Done, on a board
+  `init` made).
 - Pick one and the whole board shows only its cards: the columns, the counts, the search.
   **No project** shows the cards without a `repo:` tag.
 - The address keeps it (`?project=api`), so a bookmark opens on the project.
@@ -314,7 +322,11 @@ picked background are in [`docs/screenshots/themes`](docs/screenshots/themes).*
 
 ### The command line, for whoever prefers it
 
-Every action of the page is a command, and three things are commands only.
+Every change the page makes to the board is a command too: the page's edit of a card is
+`set` (`--title`, `--body`, `--type`, `--attach`, `--tag`, `--color`, `--field`, …). Two things
+are the page's alone: a card's place inside its column (a drag), and the page's view choices (the
+theme, the background, the project shown). Three things are commands only: several cards from a
+file, an import, `validate`.
 
 **A card, a comment, a move, a decision:**
 
@@ -324,6 +336,7 @@ pinboard new --as robin --type task --title "Add a sign-in page" \
 pinboard reply 1 --as robin --text "Email and password. Magic links later."
 pinboard move 1 --to done --as robin
 pinboard set 2 --as robin --field decided="Cookie, revisit when we go multi-instance."
+pinboard set 1 --as robin --title "Add a sign-in page with email" --attach docs/auth.md:10-24
 pinboard check --as robin          # what changed since your cursor; --ack moves it to the end
 ```
 
@@ -390,8 +403,9 @@ The board is valid: 4 cards, 17 events, 2 cursors.
 ```
 
 **A project with existing notes:** `pinboard import --from docs --dry-run` prints how a
-`PINNED.md`, a `DECISIONS-PENDING.md` and a plan's status table would become cards; without
-`--dry-run` it creates them, once, and `tidy --imported` cleans their titles.
+`PINNED.md` and a `DECISIONS-PENDING.md` would become cards, and a plan's status table too when you
+name the plan (`--plan docs/plan.md`); without `--dry-run` it creates them, once, and
+`tidy --imported` cleans their titles.
 
 ## The files
 
@@ -502,10 +516,15 @@ page's process once the file has been quiet.
 ### `cursors/<participant>.json`
 
 ```json
-{ "seen": "2026-10-03T00:52:10Z", "opened": { "42": "2026-10-03T00:52:10Z" } }
+{ "seen": "2026-10-03T00:52:10Z", "lines": 17, "opened": { "42": "2026-10-03T00:52:10Z" } }
 ```
 
 What the participant has seen. For an agent it is also its check cursor.
+
+- `seen`: the time of the participant's last check with `--ack`.
+- `lines`: how many lines of `events.jsonl` it has seen, the cursor's exact place.
+- `opened`: per card id, when it last opened the card (`show --as`, or the page): the card's
+  events before that are seen.
 
 ### What is never written into a card
 
@@ -513,7 +532,9 @@ A write is refused when its text holds:
 
 - **a secret**: a key, a connection-string password (`Password=…`, or inside an address,
   `scheme://user:password@host`), a bearer token;
-- **a path of this machine** outside the workspace (under the home folder);
+- **a path of this machine** outside the workspace (under the home folder), written in full or
+  from `~` (`~/notes/log.txt`, when the home folder holds `notes`; an application's own
+  `~/Views/Home/Index.cshtml` names nothing there, and is written as it is);
 - **a private name**, listed in `private-names.txt`.
 
 A path under the repository or the workspace is not refused: it is rewritten as the card cites
@@ -527,27 +548,61 @@ gives the same commands under its own name (`codelead board …`).
 
 | Command | What it does |
 | --- | --- |
-| `init` | Creates the board folder: `board.json`, `AGENTS.md`, `items/`, `events.jsonl`, `cursors/`. |
+| `init` | Creates the board folder: `board.json`, `AGENTS.md`, `events.jsonl`, `.gitignore`, `items/`, `cursors/`. |
 | `check --as <you>` | What changed since your cursor: what is addressed to you first, then the decisions, then the rest. `--ack` moves the cursor to the end; `--since <time>` looks from a time. |
 | `list` | The cards by column. `--column`, `--tag`, `--type`, `--repo`, `--archived`. |
 | `show <id>` | One card: fields, relations both ways, attachments, description, thread. |
 | `new --as <you>` | Creates a card (`--type`, `--title`, `--body`, `--field`, …), or every card of a markdown file (`--batch`), all or none. `--dry-run` writes nothing. |
 | `reply <id> --as <you>` | Appends a comment (`--text` or `--file`). |
-| `move <id…> --to <column> --as <you>` | Moves a card, or several (they keep their order); an agent only into `agents.mayMoveTo`. |
-| `set <id…> --as <you>` | Changes tags, relations, the status line, the colour, the fields of a card, or the same on several. |
+| `move <id…> --to <column> --as <you>` | Moves a card, or several (they keep their order); an agent only into `agents.mayMoveTo`, and never out of a person's column. |
+| `set <id…> --as <you>` | Changes the title (`--title`), the description (`--body`, `--body-file`), the type (`--type`), tags, relations, attachments (`--attach <path[:lines]>`), the status line, the colour, the fields of a card, or the same on several (a title or a description: one card only). |
 | `archive <id…> --as <person>` | Archives cards: they leave the board and stay in their files. A person only. |
 | `unarchive <id…> --as <person>` | Brings archived cards back to their columns. A person only. |
 | `validate` | Checks every file of the board. |
-| `import --from <folder>` | Turns `PINNED.md`, `DECISIONS-PENDING.md` and the plan's status table into cards, once. |
+| `import --from <folder>` | Turns `PINNED.md`, `DECISIONS-PENDING.md` and, with `--plan <file>`, a plan's status table into cards, once. `--from` is required; no plan is read unless it is named. |
 | `tidy --imported` | After the import: strips the bold repetition of the title from imported cards. |
 | `serve` | Serves the page on 127.0.0.1 (port 7414, or a free one). `--open` opens it. |
 
-Every command takes `--board <dir>` and `--json`.
-
-Exit codes: **0** done; **1** a rule refused the write (or `validate` found problems);
-**2** the command cannot run (no board, no such card, a missing or wrong argument).
+Every command takes `--board <dir>` and `--json`. With `--json` a command prints one JSON
+document, a refusal too: `{ "refused": "<code>", "message": "…" }`.
 
 `pinboard --help` and `pinboard <command> --help` give every option.
+
+### Exit codes
+
+| Exit | What it means |
+| --- | --- |
+| **0** | Done, or nothing to change. |
+| **1** | A rule of the board refused the write, and nothing was written; or `validate` found problems. |
+| **2** | The command cannot run as written, and nothing was written: a missing or malformed argument, an unknown option, no board, no such card. |
+
+Every refusal, by the code `--json` gives it:
+
+| `refused` | Exit | When |
+| --- | --- | --- |
+| `usage` | 2 | A missing option or argument (`new` without `--as`); two that do not go together (`--body` and `--body-file`); a value of the wrong form (not a card id, a relation that is not `<kind>:<id>`, a field that is not `<name>=<value>` or not one of the card's type, not a time, not a port); a file that cannot be read; `init` arguments that make no valid board; `serve` with no page built and no tools to build it. The parser's own refusals (an unknown option, a missing `<id>`) exit 2 too, in its words. |
+| `no-board` | 2 | No `board.json` where the command looks. |
+| `not-found` | 2 | No card with the id given, a relation's included. |
+| `board-exists` | 1 | `init` where a board already is. |
+| `participant` | 1 | `--as` names no participant of the board. |
+| `not-allowed` | 1 | The participant may not do it: an agent archives, creates on a board whose `agents.mayCreate` is false, sets a card's colour, or tags a card `for:codelead` (CodeLead itself may); an agent imports. |
+| `column` | 1 | No such column; an agent moves or creates a card in a column it may not, or moves one out of a person's column (CodeLead itself may). |
+| `type` | 1 | No such card type. |
+| `decision` | 1 | An agent sets or removes a decision; a decision that is not the option chosen, by a participant, on a day; an ask that is not one to three sentences. |
+| `color` | 1 | A colour that is none of the five. |
+| `relation` | 1 | A card related to itself; a kind of relation the board does not have; a batch's relation to a key no card of it has. |
+| `text` | 1 | An empty comment, title or tag; a title, status or tag of more than one line. |
+| `structure` | 1 | A line the card would read as its own structure (`## Thread`, a comment's heading). |
+| `secret` | 1 | The text holds a secret (a key, a connection-string password, a bearer token). |
+| `machine-path` | 1 | The text holds a path of this machine outside the workspace. |
+| `private-name` | 1 | The text holds a name of `private-names.txt`. |
+| `stale` | 1 | The card changed since it was read (`--if-updated`), or while it was written. |
+| `invalid` | 1 | A file of the board that cannot be read (a card, `board.json`, a cursor), or one id on two cards; a batch file that does not read, or two of its cards with one key. |
+| `imported` | 1 | `import` of a document it imported already. |
+| `busy` | 1 | Another writer holds the board's lock: retry. |
+
+A command given several ids answers for each card; it exits 2 when every refusal is of the
+first three codes, and 1 when any is a rule's.
 
 The words of a refusal, of `AGENTS.md` and of the page still name the command as CodeLead
 gives it (`codelead board init`, `codelead board validate`): the package was extracted from

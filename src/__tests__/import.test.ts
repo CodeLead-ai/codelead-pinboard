@@ -4,12 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { runBoardImport, runBoardInit, runBoardValidate, type BoardCliDependencies } from "../cli/board.js";
+import { createBoardCommand, runBoardImport, runBoardInit, runBoardValidate, type BoardCliDependencies } from "../cli/board.js";
 import { boardContext, getCard, readEvents, sha256 } from "../core/index.js";
 import { importDocuments, type ImportedItem } from "../import/index.js";
 
 const FIXTURES = fileURLToPath(new URL("./fixtures/import/", import.meta.url));
 const DOCUMENTS = ["PINNED.md", "DECISIONS-PENDING.md", "behaviour-extraction-plan-2026-10-01.md"];
+/** The plan of the trimmed documents: read only because it is named (`--plan`), never by a default name. */
+const PLAN = "docs/behaviour-extraction-plan-2026-10-01.md";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -88,7 +90,7 @@ describe("the import of today's documents", () => {
     const { root, deps, said } = await workspace();
     const board = path.join(root, "docs", "codelead", "board");
     const ctx = boardContext({ dir: board, root, home: "/home/tester", now: () => new Date("2026-10-04T10:00:00Z") });
-    const result = importDocuments(ctx, { from: path.join(root, "docs"), dryRun: true });
+    const result = importDocuments(ctx, { from: path.join(root, "docs"), plan: path.join(root, PLAN), dryRun: true });
     expect(result.items.map(row)).toEqual(EXPECTED);
     expect(result.sources).toEqual([
       { source: "docs/PINNED.md", found: true, items: 8, cards: 8 },
@@ -98,7 +100,7 @@ describe("the import of today's documents", () => {
     expect(fs.readdirSync(path.join(board, "items"))).toEqual([]);
 
     // The command prints the same mapping, for the person to check.
-    expect(await runBoardImport({ from: "docs", dryRun: true }, deps)).toBe(0);
+    expect(await runBoardImport({ from: "docs", plan: PLAN, dryRun: true }, deps)).toBe(0);
     const printed = said().split("\n");
     expect(printed[0]).toBe("Import from docs as robin: 15 cards from 3 documents; 8 items skipped. Dry run: nothing was written, and the ids are the ones the cards would get.");
     expect(printed).toContain("docs/PINNED.md: 8 items, 8 cards");
@@ -115,7 +117,7 @@ describe("the import of today's documents", () => {
   it("writes one card per item with the item's text and citations, its source and the paths it names, and leaves the documents as they were", async () => {
     const { ws, root, deps, said } = await workspace();
     const before = DOCUMENTS.map((name) => fs.readFileSync(path.join(root, "docs", name), "utf8"));
-    expect(await runBoardImport({ from: "docs" }, deps)).toBe(0);
+    expect(await runBoardImport({ from: "docs", plan: PLAN }, deps)).toBe(0);
     expect(said().split("\n")[0]).toBe("Import from docs as robin: 15 cards from 3 documents; 8 items skipped.");
     expect(DOCUMENTS.map((name) => fs.readFileSync(path.join(root, "docs", name), "utf8"))).toEqual(before);
 
@@ -198,11 +200,35 @@ describe("the import of today's documents", () => {
     const { deps, said } = await workspace(["PINNED.md"]);
     expect(await runBoardImport({ from: "docs", as: "claude" }, deps)).toBe(1);
     expect(said()).toBe("Refused: the import writes into Pinned and Done, a person's columns, and claude is an agent; run it as a person (--as robin). Nothing was written.");
-    expect(await runBoardImport({ from: "docs", dryRun: true }, deps)).toBe(0);
+    expect(await runBoardImport({ from: "docs", plan: PLAN, dryRun: true }, deps)).toBe(0);
     const printed = said();
     expect(printed).toContain("docs/DECISIONS-PENDING.md: not found, nothing imported from it");
     expect(printed).toContain("docs/behaviour-extraction-plan-2026-10-01.md: not found, nothing imported from it");
     expect(await runBoardImport({ from: "nowhere" }, deps)).toBe(2);
     expect(said()).toBe("No folder nowhere.");
+  });
+
+  it("reads a plan only when it is named: no document name of one project stands in for it, and the help says --from is required", async () => {
+    // The folder holds the plan, but it is not named: only the two documents are read, and the mapping says how to add a plan.
+    const { root, deps, said } = await workspace();
+    const ctx = boardContext({ dir: path.join(root, "docs", "codelead", "board"), root, home: "/home/tester" });
+    const result = importDocuments(ctx, { from: path.join(root, "docs"), dryRun: true });
+    expect(result.planNamed).toBe(false);
+    expect(result.sources.map((source) => source.source)).toEqual(["docs/PINNED.md", "docs/DECISIONS-PENDING.md"]);
+    expect(result.items.map(row)).toEqual(EXPECTED.filter(([source]) => source !== PLAN));
+    expect(await runBoardImport({ from: "docs", dryRun: true }, deps)).toBe(0);
+    const printed = said().split("\n");
+    expect(printed[0]).toBe("Import from docs as robin: 12 cards from 2 documents; 8 items skipped. Dry run: nothing was written, and the ids are the ones the cards would get.");
+    expect(printed.at(-1)).toBe("No plan was named, so no status table was read: give --plan <file> to import one.");
+    expect(printed.join("\n")).not.toContain(PLAN);
+
+    // --from has no default; the help says so, and names no project's document as the plan.
+    expect(await runBoardImport({}, deps)).toBe(2);
+    expect(said()).toBe("import needs --from <folder>: the folder that holds PINNED.md and DECISIONS-PENDING.md (docs, say); a plan is named with --plan <file>.");
+    const help = createBoardCommand().commands.find((command) => command.name() === "import")!.helpInformation().replace(/\s+/g, " ");
+    expect(help).toContain("--from <folder> required: the folder that holds PINNED.md and DECISIONS-PENDING.md, as docs");
+    expect(help).toContain("--plan <file> a plan whose status table becomes task cards (none is read when not given)");
+    expect(help).not.toContain("behaviour-extraction");
+    expect(help).not.toMatch(/--from <folder>[^-]*default/);
   });
 });

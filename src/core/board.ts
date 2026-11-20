@@ -41,8 +41,10 @@ import { digest, isIsoTime, isoSeconds, slugify, timeOf } from "./text.js";
 import {
   ASK_FIELD,
   BOARD_FOLDER,
+  CODELEAD_PARTICIPANT_ID,
   DECIDED_FIELD,
   EVENT_KINDS,
+  FOR_CODELEAD_TAG,
   RELATION_KINDS,
   RELATION_SEEN_FROM_TARGET,
   TYPE_FIELDS,
@@ -65,7 +67,10 @@ import { sameValue, type YamlMap, type YamlValue } from "./yaml.js";
  * when a rule says no:
  *
  * - A card is changed only by a participant of the board; an agent moves or creates a card only
- *   into the columns `agents.mayMoveTo` lists and no person owns.
+ *   into the columns `agents.mayMoveTo` lists and no person owns, and moves none out of a column a
+ *   person owns (CodeLead itself may: it works only the cards the person hands it). The person's
+ *   marks are the person's: an agent sets no decision and no colour, and tags no card
+ *   `for:codelead` (the queue for CodeLead; CodeLead itself may).
  * - A write that names the `updated` it read is refused when the card's `updated` differs (a
  *   stale write), and every write is refused when the card's file changed while it was written.
  * - No text holding a secret, a path of this machine or a private name is written (guard.ts). A
@@ -341,14 +346,14 @@ function requireFresh(card: Card, expectUpdated: string | undefined): void {
 
 function requireRelationKind(kind: string): void {
   if (!(RELATION_KINDS as readonly string[]).includes(kind)) {
-    throw new BoardRefusal("usage", `Refused: "${kind}" is not a kind of relation (${RELATION_KINDS.join(", ")}). Nothing was written.`);
+    throw new BoardRefusal("relation", `Refused: "${kind}" is not a kind of relation (${RELATION_KINDS.join(", ")}). Nothing was written.`);
   }
 }
 
 function oneLine(text: string, what: string): string {
   const trimmed = text.trim();
-  if (trimmed === "") throw new BoardRefusal("usage", `Refused: ${what} is empty; nothing was written.`);
-  if (/[\r\n]/.test(trimmed)) throw new BoardRefusal("usage", `Refused: ${what} must be one line; nothing was written.`);
+  if (trimmed === "") throw new BoardRefusal("text", `Refused: ${what} is empty; nothing was written.`);
+  if (/[\r\n]/.test(trimmed)) throw new BoardRefusal("text", `Refused: ${what} must be one line; nothing was written.`);
   return trimmed;
 }
 
@@ -389,7 +394,7 @@ function checkedDescription(writing: PathWriting, text: string, names: string[],
 /** A comment as a card keeps it: its paths cited (the rewrites added to `rewritten`), then refused when it is empty, still unsafe, or would split the card. */
 function checkedComment(writing: PathWriting, text: string, rewritten: string[]): string {
   const given = normalizeBody(text);
-  if (given === "") throw new BoardRefusal("usage", "Refused: the comment is empty; nothing was written.");
+  if (given === "") throw new BoardRefusal("text", "Refused: the comment is empty; nothing was written.");
   const body = cited(writing, given, rewritten);
   refuseUnsafe(writing.scope, "the comment", body);
   const structure = structureLines(body, true);
@@ -656,7 +661,43 @@ function givesDecision(value: YamlValue | undefined): boolean {
  * refused in these words, and nothing is written.
  */
 function refuseAgentDecision(participant: Participant): never {
-  throw new BoardRefusal("usage", `Refused: ${participant.id} is an agent; the decision is the person's: an agent writes its recommendation in fields.ask. Nothing was written.`);
+  throw new BoardRefusal("decision", `Refused: ${participant.id} is an agent; the decision is the person's: an agent writes its recommendation in fields.ask. Nothing was written.`);
+}
+
+/**
+ * The queue for CodeLead is the person's to fill (AGENTS.md): an agent's write that adds the tag
+ * `for:codelead` is refused, unless the agent is CodeLead itself. Compared without case, as
+ * CodeLead's queue reads the tag.
+ */
+function refuseAgentQueueTag(participant: Participant, tags: readonly string[]): void {
+  if (participant.kind !== "agent" || participant.id === CODELEAD_PARTICIPANT_ID) return;
+  if (!tags.some((tag) => tag.trim().toLowerCase() === FOR_CODELEAD_TAG)) return;
+  throw new BoardRefusal(
+    "not-allowed",
+    `Refused: ${participant.id} is an agent and may not tag a card ${FOR_CODELEAD_TAG}: the person queues a card for CodeLead; ask in the thread. Nothing was written.`
+  );
+}
+
+/** The colour is the person's own mark (AGENTS.md): an agent's write that sets or removes it is refused. */
+function refuseAgentColor(participant: Participant): void {
+  if (participant.kind !== "agent") return;
+  throw new BoardRefusal("not-allowed", `Refused: ${participant.id} is an agent and may not set a card's colour: the colour is the person's own mark. Nothing was written.`);
+}
+
+/**
+ * A person's column (`owner: "person"`, Pinned and Done on a board `init` made) is the person's: an
+ * agent moves no card into it (`requireMayEnter`) and none out of it. CodeLead itself may take a
+ * card out of it: it works only a card the person handed it, by the tag `for:codelead` or by naming
+ * the card (`implement --card <id>`), and its queue takes tagged cards from Pinned.
+ */
+function requireMayLeave(config: BoardConfig, participant: Participant, card: Card, to: BoardColumn): void {
+  if (participant.kind === "person" || participant.id === CODELEAD_PARTICIPANT_ID || card.column === to.id) return;
+  const from = columnOf(config, card.column);
+  if (from?.owner !== "person") return;
+  throw new BoardRefusal(
+    "column",
+    `Refused: ${participant.id} is an agent and may not move a card out of ${from.name} (a person's column): the person moves it from there; ask in the thread. Nothing was written.`
+  );
 }
 
 export interface CreateOptions {
@@ -707,7 +748,7 @@ export function createCards(ctx: BoardContext, as: string, inputs: NewCardInput[
     const refs = new Map<string, number>();
     inputs.forEach((input, index) => {
       if (input.ref === undefined) return;
-      if (refs.has(input.ref)) throw new BoardRefusal("usage", `Refused: two new cards are both called "${input.ref}". Nothing was written.`);
+      if (refs.has(input.ref)) throw new BoardRefusal("invalid", `Refused: two new cards are both called "${input.ref}". Nothing was written.`);
       refs.set(input.ref, start + index);
     });
     const names = readPrivateNames(ctx.dir);
@@ -725,14 +766,16 @@ export function createCards(ctx: BoardContext, as: string, inputs: NewCardInput[
       const title = cited(writing, oneLine(input.title, "the title"), rewritten);
       const description = checkedDescription(writing, input.description ?? "", names, rewritten);
       const tags = normalizeTags([...(input.tags ?? []), ...(options.tagCreator === false ? [] : [`by:${as}`])], (tag) => cited(writing, tag, rewritten));
+      refuseAgentQueueTag(participant, tags);
+      if (input.color !== undefined && !["", "none"].includes(input.color.trim().toLowerCase())) refuseAgentColor(participant);
       const relations: CardData["relations"] = [];
       for (const relation of input.relations ?? []) {
         requireRelationKind(relation.kind);
         const to = relation.ref !== undefined ? refs.get(relation.ref) : relation.to;
-        if (to === undefined) throw new BoardRefusal("usage", `Refused: a relation names "${relation.ref ?? ""}", which is no card of this call. Nothing was written.`);
+        if (to === undefined) throw new BoardRefusal("relation", `Refused: a relation names "${relation.ref ?? ""}", which is no card of this call. Nothing was written.`);
         // A card of this call is named by its ref; an id names a card already on the board, never one this call is about to number.
         if (relation.ref === undefined && !known.has(String(to))) throw new BoardRefusal("not-found", `Refused: a relation names card #${to}, which is not on the board. Nothing was written.`);
-        if (String(to) === String(id)) throw new BoardRefusal("usage", "Refused: a card cannot relate to itself. Nothing was written.");
+        if (String(to) === String(id)) throw new BoardRefusal("relation", "Refused: a card cannot relate to itself. Nothing was written.");
         if (!relations.some((entry) => entry.kind === relation.kind && String(entry.to) === String(to))) relations.push({ kind: relation.kind, to });
       }
       const attachments = (input.attachments ?? []).map((attachment) => ({ ...attachment, path: cited(writing, oneLine(attachment.path, "an attachment's path"), rewritten) }));
@@ -840,6 +883,7 @@ export function moveCard(
   return changeCard(ctx, id, input.as, input.expectUpdated, (card, config, participant, at, cards) => {
     const column = requireColumn(config, input.to);
     requireMayEnter(config, participant, column, "move a card into");
+    requireMayLeave(config, participant, card, column);
     const events: BoardEvent[] = [];
     let comment: Comment | undefined;
     if (input.comment !== undefined) {
@@ -920,6 +964,9 @@ export function updateCard(ctx: BoardContext, id: CardId, input: { as: string; c
     if (participant.kind === "agent" && changes.fields && Object.prototype.hasOwnProperty.call(changes.fields, DECIDED_FIELD)) {
       if (givesDecision(changes.fields[DECIDED_FIELD]) || decisionData(card.fields[DECIDED_FIELD]) !== null) refuseAgentDecision(participant);
     }
+    // The colour is the person's mark, and the queue for CodeLead the person's to fill.
+    if (changes.color !== undefined) refuseAgentColor(participant);
+    refuseAgentQueueTag(participant, changes.addTags ?? []);
     const names = readPrivateNames(ctx.dir);
     const writing = pathWriting(ctx, config, input.rewriteHomePaths);
     const scope = writing.scope;
@@ -997,7 +1044,7 @@ export function updateCard(ctx: BoardContext, id: CardId, input: { as: string; c
     const same = (left: { kind: string; to: CardId }, right: { kind: string; to: CardId }): boolean => left.kind === right.kind && String(left.to) === String(right.to);
     for (const relation of changes.addRelations ?? []) {
       requireRelationKind(relation.kind);
-      if (String(relation.to) === String(card.id)) throw new BoardRefusal("usage", "Refused: a card cannot relate to itself. Nothing was written.");
+      if (String(relation.to) === String(card.id)) throw new BoardRefusal("relation", "Refused: a card cannot relate to itself. Nothing was written.");
       if (!cards.some((other) => String(other.id) === String(relation.to))) throw new BoardRefusal("not-found", `Refused: there is no card #${relation.to} on the board to relate to. Nothing was written.`);
       if (next.relations.some((entry) => same(entry, relation))) continue;
       next.relations.push({ kind: relation.kind, to: relation.to });

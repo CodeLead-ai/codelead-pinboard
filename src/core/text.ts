@@ -45,6 +45,11 @@ export function timeOf(value: unknown): number | undefined {
   return isIsoTime(value) ? Date.parse(value) : undefined;
 }
 
+/** A word with its article, as a sentence says a card's type: "a task", "an idea". */
+export function withArticle(word: string): string {
+  return `${/^[aeiou]/i.test(word) ? "an" : "a"} ${word}`;
+}
+
 /** A short name for a file, from a title: lower-case words of letters and digits joined by "-". */
 export function slugify(title: string, max = 40): string {
   const words = title

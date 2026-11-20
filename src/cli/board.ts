@@ -19,6 +19,7 @@ import {
   describeDecision,
   describeEvent,
   eventLines,
+  exitCodeOfRefusal,
   getCard,
   initBoard,
   isBoardRefusal,
@@ -36,6 +37,7 @@ import {
   unarchiveCard,
   updateCard,
   validateBoard,
+  type Attachment,
   type BoardConfig,
   type BoardContext,
   type BoardEvent,
@@ -50,6 +52,7 @@ import {
   type WriteResult,
   type YamlValue
 } from "../core/index.js";
+import { withArticle } from "../core/text.js";
 import { formatImportMapping, formatTidy, importDocuments, tidyImported } from "../import/index.js";
 import { createBoardServer, ensurePageBuilt, pageLocation, personOf } from "../server/index.js";
 import { consoleLog, type BoardLog } from "./log.js";
@@ -60,8 +63,9 @@ import { consoleLog, type BoardLog } from "./log.js";
  * (src/core), the same way the page does, and refuses what the board's rules refuse. It never calls
  * a model and never runs code.
  *
- * Exit 0 when done, 1 when a rule refused the write (or `validate` found problems), 2 when the
- * command cannot run (no board, no such card, a missing or wrong argument).
+ * Exit 0 when done; 1 when a rule of the board refused the write (or `validate` found problems);
+ * 2 when the command cannot run as written: a missing or malformed argument, an unknown option, no
+ * board, no such card (`exitCodeOfRefusal`; the parser's own refusals exit 2 too).
  */
 export interface BoardCliDependencies {
   cwd?: () => string;
@@ -143,6 +147,16 @@ export interface BoardMoveOptions extends Common, PathOptions {
 }
 export interface BoardSetOptions extends Common, PathOptions {
   as?: string;
+  /** The card's new title (one card only). */
+  title?: string;
+  /** The card's new description (one card only); an empty text empties it. */
+  body?: string;
+  /** The card's new description, from a file (one card only). */
+  bodyFile?: string;
+  /** The card's new type, one of the board's (the card keeps the fields of its old type). */
+  type?: string;
+  /** `path` or `path:lines` (`docs/plan.md:40-60`, `<repository>:<path>`): an attachment to add. */
+  attach?: string[];
   tag?: string[];
   untag?: string[];
   relate?: string[];
@@ -241,7 +255,7 @@ async function run(options: Common, dependencies: BoardCliDependencies, work: (c
     }
     if (isBoardRefusal(error)) {
       output(options.json ? JSON.stringify({ refused: error.code, message: error.message }) : error.message);
-      return ["no-board", "not-found", "usage"].includes(error.code) ? 2 : 1;
+      return exitCodeOfRefusal(error.code);
     }
     throw error;
   }
@@ -257,6 +271,21 @@ function cardIdOf(text: string): CardId {
   if (id === undefined) throw new UsageError(`"${text}" is not a card id (42 or #42).`);
   return id;
 }
+
+/** `path` or `path:lines`, as `--attach docs/plan.md:40-60` writes an attachment (the page's "Attach a file" reads it the same way). */
+function attachmentOf(text: string): Attachment {
+  const value = text.trim();
+  if (value === "") throw new UsageError("--attach needs a file: docs/plan.md, docs/plan.md:40-60 or <repository>:<path>.");
+  const lined = /^(.*?):(\d+(?:-\d+)?)$/.exec(value);
+  return lined ? { path: lined[1]!, lines: lined[2]! } : { path: value };
+}
+
+/** The options of `set` that give one card its own text, with how the refusal of several ids names them. */
+const ONE_CARD_SET_OPTIONS: Array<[keyof BoardSetOptions, string, string]> = [
+  ["title", "--title", "title"],
+  ["body", "--body", "description"],
+  ["bodyFile", "--body-file", "description"]
+];
 
 /** `<kind>:<id>`, as `--relate child-of:7` writes it. */
 function relationOf(text: string): { kind: string; to: CardId } {
@@ -327,7 +356,9 @@ function typedFields(texts: string[], type: string): Record<string, YamlValue> {
     const [name, value] = fieldOf(text);
     if (known && !known.includes(name)) {
       throw new UsageError(
-        known.length === 0 ? `A ${type} has no fields; "${name}" is not one.` : `"${name}" is not a field of a ${type} (${known.join(", ")}); change the card's type first if it should have it.`
+        known.length === 0
+          ? `${withArticle(type).replace(/^a/, "A")} has no fields; "${name}" is not one.`
+          : `"${name}" is not a field of ${withArticle(type)} (${known.join(", ")}); change the card's type first if it should have it.`
       );
     }
     fields[name] = value;
@@ -413,7 +444,7 @@ function bulkSummary(results: BulkCardResult[], json: boolean | undefined, headi
     output([`${heading} (${counts.join(", ")}):`, ...results.map((result) => `  #${String(result.id)} ${result.outcome === "refused" ? `refused: ${result.refusal!.message}` : line(result)}`), ...rewriteLines(results.flatMap((result) => result.write?.events ?? []))].join("\n"));
   }
   if (refused.length === 0) return 0;
-  return refused.every((result) => ["no-board", "not-found", "usage"].includes(result.refusal!.code)) ? 2 : 1;
+  return refused.every((result) => exitCodeOfRefusal(result.refusal!.code) === 2) ? 2 : 1;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -792,23 +823,35 @@ export async function runBoardSet(id: string | string[], options: BoardSetOption
     const ids = idsOf(id);
     oneCardOnly(ids, options);
     const as = need(options.as, "set needs --as <participant>: who changes the card.");
+    // A title and a description are one card's own: the same text on several cards is a slip.
+    const own = ONE_CARD_SET_OPTIONS.find(([name]) => options[name] !== undefined);
+    if (own && ids.length > 1) throw new UsageError(`${own[1]} gives one card its ${own[2]}; give it with one id, not several.`);
+    if (options.body !== undefined && options.bodyFile !== undefined) throw new UsageError("set takes --body or --body-file, not both.");
+    const description = options.bodyFile !== undefined ? readText(options.bodyFile, dependencies) : options.body;
     const fields: Record<string, YamlValue | null> = {};
-    // Each field must be one of every named card's type: a typo is refused, not written as a new field.
-    if (options.field && options.field.length > 0) for (const cardId of ids) Object.assign(fields, typedFields(options.field, getCard(ctx, cardId).card.type));
+    // Each field must be one of every named card's type (the new one, with --type): a typo is refused, not written as a new field.
+    if (options.field && options.field.length > 0) for (const cardId of ids) Object.assign(fields, typedFields(options.field, options.type ?? getCard(ctx, cardId).card.type));
     for (const name of options.unsetField ?? []) {
       if (Object.prototype.hasOwnProperty.call(fields, name)) throw new UsageError(`set cannot both set and remove the field ${name}.`);
       fields[name] = null;
     }
+    // The same changes as the page's edit of a card (its title, description, type, attachments …), through the same core.
     const changes: CardChanges = {
+      ...(options.title !== undefined ? { title: options.title } : {}),
+      ...(description !== undefined ? { description } : {}),
+      ...(options.type !== undefined ? { type: options.type } : {}),
       ...(options.tag ? { addTags: options.tag } : {}),
       ...(options.untag ? { removeTags: options.untag } : {}),
       ...(options.relate ? { addRelations: options.relate.map(relationOf) } : {}),
       ...(options.unrelate ? { removeRelations: options.unrelate.map(relationOf) } : {}),
+      ...(options.attach ? { addAttachments: options.attach.map(attachmentOf) } : {}),
       ...(options.status !== undefined ? { status: options.status } : {}),
       ...(options.color !== undefined ? { color: options.color } : {}),
       ...(Object.keys(fields).length > 0 ? { fields } : {})
     };
-    if (Object.keys(changes).length === 0) throw new UsageError("set needs something to change: --tag, --untag, --relate, --unrelate, --status, --color, --field or --unset-field.");
+    if (Object.keys(changes).length === 0) {
+      throw new UsageError("set needs something to change: --title, --body, --body-file, --type, --tag, --untag, --relate, --unrelate, --attach, --status, --color, --field or --unset-field.");
+    }
     if (ids.length > 1) {
       const results = bulkWrite(ctx, { as, operation: { kind: "set", changes }, ids, ...homePaths(options) });
       return bulkSummary(results, options.json, "Changed", (result) => {
@@ -844,7 +887,7 @@ export async function runBoardValidate(options: Common, dependencies: BoardCliDe
 export async function runBoardImport(options: BoardImportOptions, dependencies: BoardCliDependencies = {}): Promise<number> {
   return run(options, dependencies, (ctx, output) => {
     const cwd = dependencies.cwd?.() ?? process.cwd();
-    const from = path.resolve(cwd, need(options.from, "import needs --from <folder>: the folder of PINNED.md, DECISIONS-PENDING.md and the plan (docs)."));
+    const from = path.resolve(cwd, need(options.from, "import needs --from <folder>: the folder that holds PINNED.md and DECISIONS-PENDING.md (docs, say); a plan is named with --plan <file>."));
     if (!fs.existsSync(from)) throw new UsageError(`No folder ${options.from}.`);
     const result = importDocuments(ctx, {
       from,
@@ -932,7 +975,7 @@ export async function runBoardServe(options: BoardServeOptions, dependencies: Bo
       log: (line) => output(line)
     });
   } catch (error) {
-    if (isBoardRefusal(error)) return say(error.code, error.message, ["no-board", "not-found", "usage"].includes(error.code) ? 2 : 1);
+    if (isBoardRefusal(error)) return say(error.code, error.message, exitCodeOfRefusal(error.code));
     throw error;
   }
 
@@ -1038,7 +1081,7 @@ export function createBoardCommand(host: BoardHost = {}): Command {
 
   board.addCommand(
     common(new Command("init"))
-      .description("Create the board folder in this repository: board.json, AGENTS.md, items/, events.jsonl, cursors/")
+      .description("Create the board folder in this repository: board.json, AGENTS.md, events.jsonl, .gitignore, items/, cursors/")
       .option("--name <name>", "the board's name (default: <repository>-workspace)")
       .option("--person <id[:Name]>", "a person of the board (repeatable; default: this machine's user)", collect)
       .option("--agent <id[:Name]>", "an agent of the board (repeatable; default: claude:Claude Code)", collect)
@@ -1111,13 +1154,20 @@ export function createBoardCommand(host: BoardHost = {}): Command {
   );
   board.addCommand(
     rewritable(common(new Command("set")))
-      .description("Change the tags, relations, status line, colour or fields of one card, or of several (the same change on each), each change with its event")
+      .description(
+        "Change the title, description, type, tags, relations, attachments, status line, colour or fields of one card, or of several (the same change on each), each change with its event: what the page's edit of a card does"
+      )
       .argument("<ids...>", "the card's id, or several ids (3 4 7)")
       .option("--as <participant>", "who changes it")
+      .option("--title <text>", "the card's new title (one line; one card only)")
+      .option("--body <markdown>", "the card's new description (one card only; an empty text empties it)")
+      .option("--body-file <path>", "the card's new description, from a file (one card only)")
+      .option("--type <type>", "the card's new type, one of the board's (it keeps the fields of its old type)")
       .option("--tag <tag>", "add a tag (repeatable)", collect)
       .option("--untag <tag>", "remove a tag (repeatable)", collect)
       .option("--relate <kind:id>", "add a relation, as related:12 (repeatable)", collect)
       .option("--unrelate <kind:id>", "remove a relation (repeatable)", collect)
+      .option("--attach <path[:lines]>", "attach a file, as docs/plan.md:40-60 or <repository>:<path> (repeatable)", collect)
       .option("--status <text>", "the one-line status beside the column (an empty text removes it)")
       .option("--color <hex|none>", "the person's colour mark: b33f40 red, ed944d orange, edd94c yellow, 48a14d green, 6577b3 blue (quote it when you write the #), or none")
       .option("--field <name=value>", 'set a field of the card\'s type, as ask="…" on a decision; a JSON list or mapping is read as one (repeatable)', collect)
@@ -1148,10 +1198,10 @@ export function createBoardCommand(host: BoardHost = {}): Command {
   );
   board.addCommand(
     common(new Command("import"))
-      .description("Turn PINNED.md, DECISIONS-PENDING.md and the plan's status table into cards, once, and print the mapping to check")
-      .option("--from <folder>", "the folder of the documents (docs)")
+      .description("Turn PINNED.md, DECISIONS-PENDING.md and, with --plan, a plan's status table into cards, once, and print the mapping to check")
+      .option("--from <folder>", "required: the folder that holds PINNED.md and DECISIONS-PENDING.md, as docs")
       .option("--as <person>", "who imports (default: the board's first person)")
-      .option("--plan <file>", "the plan (default: <from>/behaviour-extraction-plan-2026-10-01.md)")
+      .option("--plan <file>", "a plan whose status table becomes task cards (none is read when not given)")
       .option("--section <n>", "the plan's section with the status table (default: 8)")
       .option("--repo <name>", "the repository's name for the repo: tag (default: the repository folder's name)")
       .option("--workspace <folder>", "the folder of the workspace's repositories (default: the repository's parent)")
@@ -1173,5 +1223,8 @@ export function createBoardCommand(host: BoardHost = {}): Command {
       .option("--open", "open the page in the browser")
       .action(async (options: BoardServeOptions) => exit(await runBoardServe(options, deps)))
   );
+  // The parser's own refusals (an unknown option or command, a missing argument or value) are the command line's: exit 2,
+  // after the parser's words, as every refusal of a command that cannot run as written; help and --version stay 0.
+  for (const command of [board, ...board.commands]) command.exitOverride((error) => process.exit(error.exitCode === 0 ? 0 : 2));
   return board;
 }

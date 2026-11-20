@@ -9,6 +9,8 @@ import { EVENT_KINDS, type BoardConfig } from "./types.js";
  */
 export function agentsGuide(config: BoardConfig): string {
   const moveTo = agentColumns(config).map((column) => (column.id === "in-progress" ? `${column.name} (only when the person asked for the work in the session)` : column.name));
+  // That condition is a convention: no command can see what the person asked in a session.
+  const working = agentColumns(config).some((column) => column.id === "in-progress");
   const personColumns = config.columns.filter((column) => column.owner === "person").map((column) => column.name);
   const first = config.columns[0]?.name ?? "the first column";
   const review = config.columns.find((column) => column.id === "for-review")?.name ?? "the review column";
@@ -35,8 +37,9 @@ checks below, when CodeLead is installed (\`codelead board --help\`).
 - \`events.jsonl\`: one JSON line per change, appended, never edited:
   \`{"at":"2026-10-03T00:52:10Z","by":"<you>","item":42,"kind":"comment.added","data":{"excerpt":"…"}}\`
   Kinds: ${EVENT_KINDS.join(", ")}.
-- \`cursors/<you>.json\`: what you have seen (not in git):
-  \`{ "seen": "<time>", "lines": <how many lines of events.jsonl you have read> }\`.
+- \`cursors/<you>.json\`: what you have seen (not in git): \`seen\`, the time of your last \`--ack\`;
+  \`lines\`, how many lines of events.jsonl you have read; \`opened\`, when you opened each card:
+  \`{ "seen": "<time>", "lines": 17, "opened": { "42": "<time>" } }\`.
 
 ## Check
 Every \`check.intervalMinutes\` minutes, and whenever the person asks, read the lines of
@@ -56,18 +59,18 @@ An event with \`data.decided\` is the person's answer to a decision card, record
 - Create: take \`nextId\` from board.json and raise it by one in the same step; put the card in
   ${first} (or another column you may move into); tag it \`by:<you>\`; event \`item.created\`.
 - When the person asks to turn a conversation into cards: a card per decision, task, question or idea, its description standing on its own (what, why, where it came from and when), related to the others and to the cards it touches, tagged \`by:<you>\` and \`source:conversation\`, in ${intake}; show the person the list, and create them on their yes.
-- On a decision, \`fields.ask\` says what the person is asked to decide, the options and your recommendation, in one to three sentences; \`color\` is the person's colour mark: leave it.
-- Never set a decision's \`fields.decided\`: the decision is the person's; write your recommendation in \`fields.ask\`.
-- You may move a card into ${list(moveTo)}; add tags and relations; create cards.
+- On a decision, \`fields.ask\` says what the person is asked to decide, the options and your recommendation, in one to three sentences; \`color\` is the person's colour mark: leave it (the commands refuse it from an agent).
+- Never set a decision's \`fields.decided\`: the decision is the person's; write your recommendation in \`fields.ask\`. The commands refuse it.
+- You may move a card into ${list(moveTo)}; add tags and relations; create cards.${working ? " No command can tell whether the person asked for the work, so that rule is yours to keep." : ""}
 - Every change gets its event line, \`by\` you. Times are UTC: \`2026-10-03T00:52:10Z\`.
 
 ## Never
 - Start code work because of a card. Work starts when the person asks for it in the session.
-- Move a card into ${list(personColumns, "or") || "a person's column"}: ${personColumns.length === 1 ? "that column is" : "those columns are"} the person's.
+- Move a card into ${list(personColumns, "or") || "a person's column"}: ${personColumns.length === 1 ? "that column is" : "those columns are"} the person's. Nor move one out of ${personColumns.length === 1 ? "it" : "them"}: the commands refuse both.
 - Edit or remove a comment, yours or another's; you only append to the thread.
 - Write secrets (keys, passwords, tokens), names the project keeps private
   (\`${PRIVATE_NAMES_FILE}\`), or paths of your machine (\`<home>/…\`, \`C:\\…\`) into a card. Cite files
-  by their path in the repository, or \`<repository>:<path>\` for another repository.
+  by their path in the repository, or \`<repository>:<path>\` for another repository. The commands refuse such a text, a path that starts with \`~/\` included.
 
 ## Work the person asked for
 When it is done: comment with what landed (the commit, the evidence record's id, the files),
@@ -86,13 +89,16 @@ function codeleadSection(config: BoardConfig): string {
   const review = config.columns.find((column) => column.id === "for-review")?.name ?? "the review column";
   const personColumns = config.columns.filter((column) => column.owner === "person").map((column) => column.name);
   const never = personColumns.length === 0 ? "a person's column" : personColumns.length === 1 ? personColumns[0]! : `${personColumns.slice(0, -1).join(", ")} or ${personColumns[personColumns.length - 1]}`;
+  // A person's column the queue takes from (Pinned): CodeLead takes a card out of it, the person having handed the card over.
+  const takenFrom = config.columns.filter((column) => column.owner === "person" && !["in-progress", "for-review", "done"].includes(column.id)).map((column) => column.name);
+  const outOf = takenFrom.length === 0 ? "" : ` (out of ${takenFrom.length < 2 ? takenFrom.join("") : `${takenFrom.slice(0, -1).join(", ")} or ${takenFrom[takenFrom.length - 1]}`} too: the person handed the card over)`;
   return wrapLong(`
 ## CodeLead on the board
 CodeLead takes part as the participant \`codelead\` (an agent), on every card it works, in the session (\`/implement --card <id>\`) and unattended (\`codelead implement --card <id>\`, \`codelead implement --queue\`). The card is the request: its title, its description, the person's comments (as clarifications), its related cards and attachments.
-- The queue is the tag \`for:codelead\`: the person tags a card to hand it to CodeLead. \`codelead implement --queue\` takes tagged cards that are not archived${notTaken ? ` and not in ${notTaken}` : ""}, top of ${backlog} first, then the other columns in board order, each in page order. CodeLead moves each card to ${working} and keeps the tag. Agents do not add or remove the tag, and do not take the cards that carry it.
+- The queue is the tag \`for:codelead\`: the person tags a card to hand it to CodeLead. \`codelead implement --queue\` takes tagged cards that are not archived${notTaken ? ` and not in ${notTaken}` : ""}, top of ${backlog} first, then the other columns in board order, each in page order. CodeLead moves each card to ${working}${outOf} and keeps the tag. Agents do not add or remove the tag (the commands refuse an agent's adding it: ask the person in the thread), and do not take the cards that carry it.
 ${queue ? `- The old column "${queue.name}" is kept for a while: it supplies its untagged cards after the tagged cards. Tag a card \`for:codelead\` instead.\n` : ""}- CodeLead writes: \`Started:\` when it starts, with the lint of the card's text; in an unattended run, one comment with the questions the preflight asked and the answers it took; at the end, \`Landed:\` from the evidence record (the card moves to ${review}), or \`Stopped:\` with the reason and the options, addressed to the person (the card stays where it is).
 - CodeLead never writes a decision (\`fields.decided\`) and never moves a card into ${never}. An agent does not write CodeLead's comments for it.
-- To run a card again: answer in its thread, and move it back to ${backlog}, tagged \`for:codelead\`.
+- To run a card again, the person answers in its thread and moves it back to ${backlog}, tagged \`for:codelead\`.
 `);
 }
 

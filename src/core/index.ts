@@ -74,11 +74,11 @@ export { commentAndMove, describeCommentAndMove, describeDecision, describeEvent
 export { cardColorOf, checkedAsk, checkedDecided, colorName, colorWords, decisionProblems, isDecisionDay, readDecision, requireCardColor, type DecisionWriter } from "./marks.js";
 export { mentionAt, mentionCandidate, mentionsIn, mentionTokens, participantNamed, withoutCode, type MentionTarget, type MentionToken } from "./mentions.js";
 export { cardRanks } from "./order.js";
-export { BoardRefusal, isBoardRefusal, type RefusalCode } from "./errors.js";
+export { BoardRefusal, COMMAND_LINE_REFUSALS, exitCodeOfRefusal, isBoardRefusal, REFUSAL_CODES, type RefusalCode } from "./errors.js";
 export { addressedTo, appendEvents, decisionOf, eventLine, eventsPath, excerpt, readEvents, type ReadEvent } from "./events.js";
 export { LOCK_FILE, withBoardLock, writeFileAtomic } from "./files.js";
 export { cleanText, findUnsafe, PRIVATE_NAMES_FILE, readPrivateNames, refuseUnsafe, rewritePaths, unsafeWords, type GuardScope, type UnsafeKind } from "./guard.js";
-export { rewriteHomePaths, rewriteMachinePaths, type PathScope } from "./paths.js";
+export { expandHomeRelative, rewriteHomePaths, rewriteMachinePaths, type PathScope } from "./paths.js";
 export { BoardSanitizer, defaultSanitizer, type SanitizerFactory, type SanitizerPaths, type TextSanitizer } from "./sanitize.js";
 export { formatJson } from "./json.js";
 export { checkedPreferences, ensureLocalIgnored, LOCAL_FOLDER, PREFERENCES_FILE, PREFERENCES_MAX_BYTES, preferencesPath, readPreferences, writePreferences, type PreferencesRead } from "./preferences.js";

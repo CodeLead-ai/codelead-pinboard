@@ -89,7 +89,8 @@ describe("codelead board, command by command, through each command's function", 
     // ... and the timer sentence of the check (the kick-off, 2026-11-03) its three.
     expect(guide).toContain("The check every 30 minutes needs a timer you do not have by yourself");
     // ... and the landing recorded from the comment (card #276, 2026-11-04) its two.
-    expect(guide.split("\n").length).toBeLessThanOrEqual(67);
+    // ... and, for each rule, whether the commands refuse it, and the cursor's three keys: six more.
+    expect(guide.split("\n").length).toBeLessThanOrEqual(73);
     expect(fs.readFileSync(path.join(term.dir, ".gitignore"), "utf8")).toBe("cursors/\n.board.lock\nprivate-names.txt\n.*.tmp\n.local/\n");
     expect(await runBoardInit({}, term.deps)).toBe(1);
     expect(term.said()).toBe(`A board is already at ${term.dir} (board.json is there); nothing was written.`);
@@ -188,7 +189,7 @@ describe("codelead board, command by command, through each command's function", 
     expect(await runBoardSet("1", { as: "claude", tag: ["by:robin"] }, term.deps)).toBe(0);
     expect(term.said()).toBe("Nothing to change on #1; nothing was written.");
     expect(await runBoardSet("1", { as: "claude" }, term.deps)).toBe(2);
-    expect(term.said()).toBe("set needs something to change: --tag, --untag, --relate, --unrelate, --status, --color, --field or --unset-field.");
+    expect(term.said()).toBe("set needs something to change: --title, --body, --body-file, --type, --tag, --untag, --relate, --unrelate, --attach, --status, --color, --field or --unset-field.");
     expect(await runBoardSet("1", { as: "claude", relate: ["blocks"] }, term.deps)).toBe(2);
     expect(term.said()).toBe('"blocks" is not a relation; write <kind>:<card id>, for example child-of:7.');
 

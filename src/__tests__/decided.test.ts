@@ -176,7 +176,7 @@ describe("the event records the decision: data.decided beside data.fields, from 
     );
     expect(refused({ option: "Other", by: "robin", on: "2026-02-30" })).toBe('Refused: the decision has "2026-02-30" as its day (on), which is no date like 2026-10-05. Nothing was written.');
     expect(refused(["Other"])).toBe('Refused: the decision must be the option chosen (a text) or { option, by, on }, and is ["Other"]. Nothing was written.');
-    expect(refusal(() => updateCard(term.ctx, 1, { as: "robin", changes: { fields: { decided: 2 } } })).code).toBe("usage");
+    expect(refusal(() => updateCard(term.ctx, 1, { as: "robin", changes: { fields: { decided: 2 } } })).code).toBe("decision");
     expect(term.read(term.fileOf(1))).toBe(file);
     expect(term.read("events.jsonl")).toBe(log);
     // A new card is checked the same way: a text becomes the decision, and its creation carries it.
@@ -198,7 +198,7 @@ describe("the event records the decision: data.decided beside data.fields, from 
     expect(JSON.parse(term.said()).events[0].data).toEqual({ fields: ["fields"], decided: { option: "Other", by: "robin", on: "2026-10-04" } });
     expect(await runBoardSet("1", { as: "robin", unsetField: ["decided"] }, term.deps)).toBe(0);
     expect(term.said()).toBe("#1: removed its decision.");
-    expect(await runBoardSet("1", { as: "robin", field: ['decided={"option":"Other","by":"codex"}'] }, term.deps)).toBe(2);
+    expect(await runBoardSet("1", { as: "robin", field: ['decided={"option":"Other","by":"codex"}'] }, term.deps)).toBe(1);
     expect(term.said()).toBe('Refused: the decision names "codex" as who decided (by), who is not a participant of the board. Nothing was written.');
     expect(await runBoardNew({ as: "robin", type: "decision", title: "Already decided", field: ["decided=Yes"], json: true }, term.deps)).toBe(0);
     expect(JSON.parse(term.said()).card.fields.decided).toEqual({ option: "Yes", by: "robin", on: "2026-10-05" });
@@ -233,7 +233,7 @@ describe("the decision is the person's: an agent's write of it is refused, a per
     // Setting it, as a text or a mapping, alone or with another change: refused before its shape is read.
     const set = byClaude("Go with Claude's proposal");
     expect(set.message).toBe(AGENT_REFUSED);
-    expect(set.code).toBe("usage");
+    expect(set.code).toBe("decision");
     // The page's process answers this code with 422 (the page itself writes as the board's person).
     expect(statusOfRefusal(set.code)).toBe(422);
     expect(byClaude(DECIDED).message).toBe(AGENT_REFUSED);
@@ -262,18 +262,18 @@ describe("the decision is the person's: an agent's write of it is refused, a per
     expect(updateCard(term.ctx, 1, { as: "robin", changes: { fields: { decided: null } } }).events[0]!.data).toEqual({ fields: ["fields"], decided: null });
   });
 
-  it("on the command line: set --field decided=…, --unset-field decided and new --field decided=… as an agent exit 2 with the words", async () => {
+  it("on the command line: set --field decided=…, --unset-field decided and new --field decided=… as an agent exit 1 (a rule of the board) with the words", async () => {
     const term = await terminal();
     askedDecision(term);
-    expect(await runBoardSet("1", { as: "claude", field: ["decided=Go with Claude's proposal"] }, term.deps)).toBe(2);
+    expect(await runBoardSet("1", { as: "claude", field: ["decided=Go with Claude's proposal"] }, term.deps)).toBe(1);
     expect(term.said()).toBe(AGENT_REFUSED);
     expect(await runBoardSet("1", { as: "robin", field: ["decided=Go with Claude's proposal"] }, term.deps)).toBe(0);
     expect(term.said()).toBe("#1: decided: Go with Claude's proposal (by robin, 2026-10-05).");
-    expect(await runBoardSet("1", { as: "claude", unsetField: ["decided"] }, term.deps)).toBe(2);
+    expect(await runBoardSet("1", { as: "claude", unsetField: ["decided"] }, term.deps)).toBe(1);
     expect(term.said()).toBe(AGENT_REFUSED);
-    expect(await runBoardSet("1", { as: "claude", field: ["decided=Other"], json: true }, term.deps)).toBe(2);
-    expect(JSON.parse(term.said())).toEqual({ refused: "usage", message: AGENT_REFUSED });
-    expect(await runBoardNew({ as: "claude", type: "decision", title: "Decided for you", field: ["decided=Yes"] }, term.deps)).toBe(2);
+    expect(await runBoardSet("1", { as: "claude", field: ["decided=Other"], json: true }, term.deps)).toBe(1);
+    expect(JSON.parse(term.said())).toEqual({ refused: "decision", message: AGENT_REFUSED });
+    expect(await runBoardNew({ as: "claude", type: "decision", title: "Decided for you", field: ["decided=Yes"] }, term.deps)).toBe(1);
     expect(term.said()).toBe(AGENT_REFUSED);
     expect(getCard(term.ctx, 1).card.fields.decided).toEqual({ option: "Go with Claude's proposal", by: "robin", on: "2026-10-05" });
   });
@@ -308,7 +308,7 @@ describe("codelead board check: a decision recorded in the fields is listed apar
       "#1 Blank page as a hard regression  (decision · Backlog)",
       "  robin · 2026-10-05T10:01:00Z  changed its fields",
       "  robin · 2026-10-05T10:03:00Z  tagged it decision-made",
-      "  robin · 2026-10-05T10:04:00Z  changed its color",
+      "  robin · 2026-10-05T10:04:00Z  changed its colour",
       "",
       "Run again with --ack once these are dealt with. Next check in 30 minutes."
     ]);
@@ -527,7 +527,7 @@ describe("the page's process: the panel's decision is the event's, and the tile 
     const board = await call<BoardPayload>("GET", "/api/board");
     expect(board.body.cards[0]).toMatchObject({ id: 1, outcome: { option: "Other", by: "robin", on: "2026-10-05" } });
     const wrong = await call<RefusalPayload>("PUT", "/api/items/1", { changes: { fields: { decided: { option: "", by: "robin", on: "2026-10-05" } } } });
-    expect(wrong).toEqual({ status: 422, body: { refused: "usage", message: "Refused: the decision has no option chosen (option: a text). Nothing was written." } });
+    expect(wrong).toEqual({ status: 422, body: { refused: "decision", message: "Refused: the decision has no option chosen (option: a text). Nothing was written." } });
     // "Remove the decision": null, and the tile is told no more.
     const removed = await call<WritePayload>("PUT", "/api/items/1", { changes: { fields: { decided: null } } });
     expect(removed.body.events).toMatchObject([{ data: { fields: ["fields"], decided: null }, text: "removed its decision" }]);

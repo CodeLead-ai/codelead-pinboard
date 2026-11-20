@@ -127,8 +127,9 @@ describe("the design's examples are the formats (golden files)", () => {
       '  `{"at":"2026-10-03T00:52:10Z","by":"<you>","item":42,"kind":"comment.added","data":{"excerpt":"…"}}`',
       "  Kinds: item.created, item.updated, item.moved, item.archived, item.unarchived, comment.added,",
       "  relation.added, relation.removed, tag.added, tag.removed, attachment.added.",
-      "- `cursors/<you>.json`: what you have seen (not in git):",
-      '  `{ "seen": "<time>", "lines": <how many lines of events.jsonl you have read> }`.',
+      "- `cursors/<you>.json`: what you have seen (not in git): `seen`, the time of your last `--ack`;",
+      "  `lines`, how many lines of events.jsonl you have read; `opened`, when you opened each card:",
+      '  `{ "seen": "<time>", "lines": 17, "opened": { "42": "<time>" } }`.',
       "",
       "## Check",
       "Every `check.intervalMinutes` minutes, and whenever the person asks, read the lines of",
@@ -155,20 +156,24 @@ describe("the design's examples are the formats (golden files)", () => {
       "  the others and to the cards it touches, tagged `by:<you>` and `source:conversation`, in Inbox",
       "  or Backlog; show the person the list, and create them on their yes.",
       "- On a decision, `fields.ask` says what the person is asked to decide, the options and your",
-      "  recommendation, in one to three sentences; `color` is the person's colour mark: leave it.",
+      "  recommendation, in one to three sentences; `color` is the person's colour mark: leave it (the",
+      "  commands refuse it from an agent).",
       "- Never set a decision's `fields.decided`: the decision is the person's; write your",
-      "  recommendation in `fields.ask`.",
+      "  recommendation in `fields.ask`. The commands refuse it.",
       "- You may move a card into Inbox, Backlog, Ideas, In progress (only when the person asked for",
-      "  the work in the session) and For review; add tags and relations; create cards.",
+      "  the work in the session) and For review; add tags and relations; create cards. No command can",
+      "  tell whether the person asked for the work, so that rule is yours to keep.",
       "- Every change gets its event line, `by` you. Times are UTC: `2026-10-03T00:52:10Z`.",
       "",
       "## Never",
       "- Start code work because of a card. Work starts when the person asks for it in the session.",
-      "- Move a card into Pinned or Done: those columns are the person's.",
+      "- Move a card into Pinned or Done: those columns are the person's. Nor move one out of them: the",
+      "  commands refuse both.",
       "- Edit or remove a comment, yours or another's; you only append to the thread.",
       "- Write secrets (keys, passwords, tokens), names the project keeps private",
       "  (`private-names.txt`), or paths of your machine (`<home>/…`, `C:\\…`) into a card. Cite files",
-      "  by their path in the repository, or `<repository>:<path>` for another repository.",
+      "  by their path in the repository, or `<repository>:<path>` for another repository. The commands",
+      "  refuse such a text, a path that starts with `~/` included.",
       "",
       "## Work the person asked for",
       "When it is done: comment with what landed (the commit, the evidence record's id, the files),",
@@ -189,8 +194,9 @@ describe("the design's examples are the formats (golden files)", () => {
     config.agents.mayMoveTo = ["todo", "check"];
     config.check = { intervalMinutes: 60 };
     const guide = agentsGuide(config);
-    expect(guide).toContain("- You may move a card into To do and Check; add tags and relations; create cards.");
-    expect(guide).toContain("- Move a card into Waiting on me: that column is the person's.");
+    // No In progress among its columns: no convention about it to say.
+    expect(guide).toContain("- You may move a card into To do and Check; add tags and relations; create cards.\n");
+    expect(guide.replace(/\n  /g, " ")).toContain("- Move a card into Waiting on me: that column is the person's. Nor move one out of it: the commands refuse both.");
     expect(guide).toContain("put the card in\n  To do (or another column you may move into)");
     expect(guide).toContain("(how often to check; 60 when this file was written)");
     // The cards of a conversation land in the board's first column (and its backlog, when it has one).
@@ -409,8 +415,10 @@ describe("AGENTS.md for a board CodeLead joined", () => {
     expect(words).toContain('not archived and not in In progress, For review or Done');
     expect(words).toContain('other columns in board order, each in page order');
     expect(words).toContain('keeps the tag');
-    expect(words).toContain('move it back to Backlog, tagged `for:codelead`');
-    expect(words).toContain('Agents do not add or remove the tag');
+    // The queue is the person's to fill: the person runs a card again, and the commands refuse an agent's tag.
+    expect(words).toContain('the person answers in its thread and moves it back to Backlog, tagged `for:codelead`');
+    expect(words).toContain("Agents do not add or remove the tag (the commands refuse an agent's adding it: ask the person in the thread)");
+    expect(words).toContain("CodeLead moves each card to In progress (out of Pinned too: the person handed the card over)");
     expect(words).toContain('never moves a card into Pinned or Done');
     expect(words).not.toContain('The queue is the column');
     expect(words).not.toContain('drag it back');

@@ -32,7 +32,7 @@ export function colorWords(): string {
 /** A colour a writer asked for, as the file stores it; refused, in words, when it is none of the five. */
 export function requireCardColor(text: string): string {
   const color = cardColorOf(text);
-  if (!color) throw new BoardRefusal("usage", `Refused: "${text.trim()}" is not a card colour; the colours are ${colorWords()}, or none. Nothing was written.`);
+  if (!color) throw new BoardRefusal("color", `Refused: "${text.trim()}" is not a card colour; the colours are ${colorWords()}, or none. Nothing was written.`);
   return color;
 }
 
@@ -43,13 +43,13 @@ export function requireCardColor(text: string): string {
  */
 export function checkedAsk(value: YamlValue): string | undefined {
   if (typeof value !== "string") {
-    throw new BoardRefusal("usage", `Refused: the ask must be a text (what is decided, the options, the recommendation), and is ${JSON.stringify(value)}. Nothing was written.`);
+    throw new BoardRefusal("decision", `Refused: the ask must be a text (what is decided, the options, the recommendation), and is ${JSON.stringify(value)}. Nothing was written.`);
   }
   const ask = value.replace(/\r\n?/g, "\n").trim();
   if (ask === "") return undefined;
   if (ask.length > ASK_LIMIT) {
     throw new BoardRefusal(
-      "usage",
+      "decision",
       `Refused: the ask is ${ask.length} characters; it says in one to three sentences what is decided, the options and the recommendation (at most ${ASK_LIMIT} characters), and the details go in the description. Nothing was written.`
     );
   }
@@ -106,13 +106,13 @@ export function checkedDecided(value: YamlValue, writer: DecisionWriter): YamlMa
     return option === "" ? undefined : { option, by: writer.as, on: writer.today };
   }
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new BoardRefusal("usage", `Refused: the decision must be the option chosen (a text) or { option, by, on }, and is ${JSON.stringify(value)}. Nothing was written.`);
+    throw new BoardRefusal("decision", `Refused: the decision must be the option chosen (a text) or { option, by, on }, and is ${JSON.stringify(value)}. Nothing was written.`);
   }
   const { option, by, on, ...rest } = value;
   const missing = (part: YamlValue | undefined): boolean => part === undefined || part === null || part === "";
   const decided: YamlMap = { option: typeof option === "string" ? option.trim() : (option ?? null), by: missing(by) ? writer.as : by!, on: missing(on) ? writer.today : on!, ...rest };
   const problems = decisionProblems(decided, writer.participants);
-  if (problems.length > 0) throw new BoardRefusal("usage", `Refused: the decision ${problems.join("; ")}. Nothing was written.`);
+  if (problems.length > 0) throw new BoardRefusal("decision", `Refused: the decision ${problems.join("; ")}. Nothing was written.`);
   return decided;
 }
 

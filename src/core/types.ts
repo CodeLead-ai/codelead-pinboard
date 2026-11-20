@@ -129,6 +129,15 @@ export const CARD_COLORS: ReadonlyArray<{ hex: string; name: string }> = [
   { hex: "#6577b3", name: "blue" }
 ];
 
+/**
+ * The tag that hands a card to CodeLead (its queue). The queue is the person's to fill: an agent's
+ * write that adds the tag is refused, unless the agent is CodeLead itself (`CODELEAD_PARTICIPANT_ID`).
+ */
+export const FOR_CODELEAD_TAG = "for:codelead";
+
+/** The participant CodeLead takes part as, on a board it joined (an agent). */
+export const CODELEAD_PARTICIPANT_ID = "codelead";
+
 /** The decision asked of the person, on a decision card (`fields.ask`): what is decided, the options, the recommendation. */
 export const ASK_FIELD = "ask";
 

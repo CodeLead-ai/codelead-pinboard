@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 /**
@@ -19,6 +20,36 @@ export interface PathScope {
 
 function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * A home-relative path, `~/…` (or `~\…`), where a path may begin: not inside a word or another path
+ * (`a~/b`, `https://example.com/~/x` hold none). The groups: the slash, and the path's first part.
+ */
+const HOME_RELATIVE = /(?<![\p{L}\p{N}_~.\/\\-])~([\/\\])([^\s`'"()\[\]<>,;:\/\\]*)/gu;
+
+/**
+ * The text with each home-relative path of this machine written from the home folder itself
+ * (`~/notes/log.txt` as `/home/robin/notes/log.txt`), so that the rules for a path of this machine
+ * read it as the path it is: under the repository or the workspace it is then cited as a card
+ * cites those, and under the home folder it is refused, or written as `<home>/…` when the writer
+ * asks. A `~/` path is one of this machine when the file or folder its first part names is in the
+ * home folder (`~/notes/…` when the home folder holds `notes`; `~/` alone is the home folder): an
+ * application-relative path such as ASP.NET's `~/Views/Home/Index.cshtml` names nothing there, and
+ * is left as it is.
+ */
+export function expandHomeRelative(text: string, home: string): string {
+  if (!text.includes("~")) return text;
+  return text.replace(HOME_RELATIVE, (whole, slash: string, first: string) => {
+    const part = first.replace(/\.+$/, "");
+    let here: boolean;
+    try {
+      here = fs.existsSync(path.join(home, part));
+    } catch {
+      here = false;
+    }
+    return here ? `${home}${slash}${first}` : whole;
+  });
 }
 
 /**

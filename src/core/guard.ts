@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { workspaceOf } from "./boardConfig.js";
 import { BoardRefusal } from "./errors.js";
-import { rewriteHomePaths, rewriteMachinePaths } from "./paths.js";
+import { expandHomeRelative, rewriteHomePaths, rewriteMachinePaths } from "./paths.js";
 import { defaultSanitizer, type SanitizerFactory, type TextSanitizer } from "./sanitize.js";
 
 /**
@@ -18,6 +18,10 @@ import { defaultSanitizer, type SanitizerFactory, type TextSanitizer } from "./s
  * workspace becomes the path a card cites (paths.ts), so that only a path the card cannot cite
  * without losing something (under the home folder, outside the workspace) is left for the guard
  * to refuse.
+ *
+ * A home-relative path of this machine (`~/notes/log.txt`, when the home folder holds `notes`) is
+ * read as the home folder's path it names before any of this (`expandHomeRelative`), whichever
+ * sanitizer is used: it is the same path as `/home/<you>/notes/log.txt`, and gets the same answer.
  */
 export const PRIVATE_NAMES_FILE = "private-names.txt";
 
@@ -34,8 +38,10 @@ export interface GuardScope {
   sanitizer?: SanitizerFactory;
 }
 
+/** The scope's sanitizer, reading each home-relative path of this machine as the home folder's path it names first. */
 function sanitizerOf(scope: GuardScope): TextSanitizer {
-  return (scope.sanitizer ?? defaultSanitizer)({ root: scope.root, home: scope.home });
+  const sanitizer = (scope.sanitizer ?? defaultSanitizer)({ root: scope.root, home: scope.home });
+  return { text: (text) => sanitizer.text(expandHomeRelative(text, scope.home)) };
 }
 
 /**
@@ -46,7 +52,7 @@ function sanitizerOf(scope: GuardScope): TextSanitizer {
  * secret or a private name stays in the text, for the guard to refuse.
  */
 export function rewritePaths(scope: GuardScope, text: string, options: { home?: boolean } = {}): { text: string; rewritten: string[] } {
-  const lossless = rewriteMachinePaths(text, { root: scope.root, workspace: scope.workspace ?? workspaceOf(scope.root) });
+  const lossless = rewriteMachinePaths(expandHomeRelative(text, scope.home), { root: scope.root, workspace: scope.workspace ?? workspaceOf(scope.root) });
   if (!options.home) return lossless;
   const placed = rewriteHomePaths(lossless.text, scope.home);
   return { text: placed.text, rewritten: [...lossless.rewritten, ...placed.rewritten] };

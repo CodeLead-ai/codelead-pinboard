@@ -24,7 +24,8 @@ export function describeEvent(event: BoardEvent, config?: BoardConfig): string {
       return decision ? `${created}; ${describeDecision(decision)}` : created;
     }
     case "item.updated": {
-      const fields = Array.isArray(data.fields) ? (data.fields as unknown[]).map(String) : [];
+      // The parts as a person reads them: the file's `color` is said "colour", as the page and the help say it.
+      const fields = Array.isArray(data.fields) ? (data.fields as unknown[]).map(String).map((name) => (name === "color" ? "colour" : name)) : [];
       if (data.synthesized) return `changed its file with no event${fields.length > 0 ? ` (${fields.join(", ")})` : ""}`;
       // A landing recorded from the comment of a move (`data.landed`) is said as that.
       if (typeof data.landed === "string") return `recorded what landed: ${data.landed}`;

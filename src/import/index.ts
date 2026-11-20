@@ -1,9 +1,9 @@
 /**
- * The import: a project's PINNED.md, DECISIONS-PENDING.md and its plan's status table turned into
- * cards, once (`board import`), and the tidy of the imported cards afterwards (`board tidy --imported`).
+ * The import: a project's PINNED.md, DECISIONS-PENDING.md and, when it is named, a plan's status
+ * table turned into cards, once (`board import`), and the tidy of the imported cards afterwards
+ * (`board tidy --imported`).
  */
 export {
-  DEFAULT_PLAN,
   formatImportMapping,
   formatTidy,
   importDocuments,

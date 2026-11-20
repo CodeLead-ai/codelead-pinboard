@@ -377,7 +377,7 @@ export function CardPanel({ board, id, detail, error, below, crumbs, cards, know
                   })}
                   {otherFields.map((name) => (
                     <div key={name} className="field-row field-other">
-                      <div className="field-name" title={`Not a field of a ${type}; the card keeps it from before.`}>
+                      <div className="field-name" title={`Not a field of ${/^[aeiou]/i.test(type) ? "an" : "a"} ${type}; the card keeps it from before.`}>
                         {FIELD_LABELS[name] ?? name}
                       </div>
                       <div className="field-value editable">

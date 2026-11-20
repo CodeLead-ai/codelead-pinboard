@@ -125,7 +125,8 @@ describe("a card's colour: the person's mark, one of five", () => {
     board.tick();
     const set = updateCard(board.ctx, 1, { as: "robin", changes: { color: "red" } });
     expect(set.events).toEqual([{ at: "2026-10-05T10:01:00Z", by: "robin", item: 1, kind: "item.updated", data: { fields: ["color"] } }]);
-    expect(describeEvent(set.events[0]!)).toBe("changed its color");
+    // The event names the file's key; the words a person reads say "colour".
+    expect(describeEvent(set.events[0]!)).toBe("changed its colour");
     expect(board.read(board.fileOf(1))).toContain('tags: [by:robin]\ncolor: "#b33f40"\nauthor: robin\n');
     expect(getCard(board.ctx, 1).card.color).toBe("#b33f40");
     // The same colour, written another way: nothing to change, nothing written.
@@ -138,7 +139,7 @@ describe("a card's colour: the person's mark, one of five", () => {
 
     const before = board.read(board.fileOf(1));
     const wrong = refusal(() => updateCard(board.ctx, 1, { as: "robin", changes: { color: "#123456" } }));
-    expect(wrong.code).toBe("usage");
+    expect(wrong.code).toBe("color");
     expect(wrong.message).toBe(`Refused: "#123456" is not a card colour; the colours are ${PALETTE_WORDS}, or none. Nothing was written.`);
     expect(board.read(board.fileOf(1))).toBe(before);
     // A new card may carry one from the start.
@@ -201,7 +202,7 @@ describe("a decision's ask: what the person is asked to decide, on the card", ()
       "Refused: the ask is 649 characters; it says in one to three sentences what is decided, the options and the recommendation (at most 600 characters), and the details go in the description. Nothing was written."
     );
     expect(board.read(board.fileOf(1))).toBe(before);
-    expect(refusal(() => createCard(board.ctx, "robin", { type: "decision", title: "Too long", fields: { ask: "x".repeat(601) } })).code).toBe("usage");
+    expect(refusal(() => createCard(board.ctx, "robin", { type: "decision", title: "Too long", fields: { ask: "x".repeat(601) } })).code).toBe("decision");
     expect(createCard(board.ctx, "robin", { type: "decision", title: "Blank", fields: { ask: " ", options: ["A"] } }).card.fields).toEqual({ options: ["A"] });
     // A hand-written ask that is no text is a problem of the card.
     expect(parseCardText(handCard(9, "fields:\n  ask: [one, two]\n")).problems).toEqual(['"fields.ask" must be a text (what is decided, the options, the recommendation), and is ["one","two"]']);
@@ -388,12 +389,12 @@ async function terminal(): Promise<Terminal> {
 }
 
 describe("codelead board set --color, --field and --unset-field; new --field; show; check", () => {
-  it("set --color takes a hex with or without #, a name or none; another colour is refused with exit 2; show says it", async () => {
+  it("set --color takes a hex with or without #, a name or none; another colour is refused by the board's rule, exit 1; show says it", async () => {
     const term = await terminal();
     await runBoardNew({ as: "robin", type: "task", title: "One" }, term.deps);
     term.said();
     expect(await runBoardSet("1", { as: "robin", color: "b33f40" }, term.deps)).toBe(0);
-    expect(term.said()).toBe("#1: changed its color.");
+    expect(term.said()).toBe("#1: changed its colour.");
     expect(fs.readFileSync(path.join(term.dir, "items", "0001-one.md"), "utf8")).toContain('color: "#b33f40"');
     expect(await runBoardShow("1", {}, term.deps)).toBe(0);
     expect(term.said()).toContain("color: #b33f40 (red)");
@@ -401,7 +402,7 @@ describe("codelead board set --color, --field and --unset-field; new --field; sh
     expect(await runBoardSet("1", { as: "robin", color: "none" }, term.deps)).toBe(0);
     term.said();
     expect(fs.readFileSync(path.join(term.dir, "items", "0001-one.md"), "utf8")).not.toContain("color:");
-    expect(await runBoardSet("1", { as: "robin", color: "purple" }, term.deps)).toBe(2);
+    expect(await runBoardSet("1", { as: "robin", color: "purple" }, term.deps)).toBe(1);
     expect(term.said()).toBe(`Refused: "purple" is not a card colour; the colours are ${PALETTE_WORDS}, or none. Nothing was written.`);
   });
 
@@ -433,7 +434,7 @@ describe("codelead board set --color, --field and --unset-field; new --field; sh
     expect(await runBoardNew({ as: "claude", type: "decision", title: "Which TTL?", field: ["ask=One minute or five? I recommend one."] }, term.deps)).toBe(0);
     term.said();
     expect(getCard(boardContext({ dir: term.dir, root: term.root, home: "/home/tester" }), 1).card.fields).toEqual({ ask: "One minute or five? I recommend one." });
-    expect(await runBoardNew({ as: "claude", type: "decision", title: "Too long", field: [`ask=${"x".repeat(601)}`] }, term.deps)).toBe(2);
+    expect(await runBoardNew({ as: "claude", type: "decision", title: "Too long", field: [`ask=${"x".repeat(601)}`] }, term.deps)).toBe(1);
     expect(term.said()).toMatch(/^Refused: the ask is 601 characters;/);
   });
 
@@ -507,7 +508,7 @@ describe("codelead board tidy --imported", () => {
       fs.writeFileSync(path.join(term.root, "docs", name), fs.readFileSync(path.join(FIXTURES, name), "utf8").replaceAll("{{WORKSPACE}}", path.dirname(term.root)));
     }
     const ctx = boardContext({ dir: term.dir, root: term.root, home: "/home/tester", now: term.deps.now! });
-    importDocuments(ctx, { from: path.join(term.root, "docs") });
+    importDocuments(ctx, { from: path.join(term.root, "docs"), plan: path.join(term.root, "docs", "behaviour-extraction-plan-2026-10-01.md") });
     // A card the import did not make, with the same habit: left alone.
     createCard(ctx, "robin", { type: "task", title: "Mine", description: "**Mine** — written that way on purpose." });
     expect(await runBoardTidy({}, term.deps)).toBe(2);
@@ -581,14 +582,14 @@ describe("the process: the colour, the ask, the place of a card, one line for a 
     expect(colored.status).toBe(200);
     expect(colored.body.summary).toMatchObject({ color: "#ed944d" });
     expect(colored.body.card.card.color).toBe("#ed944d");
-    expect(colored.body.events).toMatchObject([{ kind: "item.updated", text: "changed its color", data: { fields: ["color"] } }]);
+    expect(colored.body.events).toMatchObject([{ kind: "item.updated", text: "changed its colour", data: { fields: ["color"] } }]);
     const asked = await call<WritePayload>("PUT", "/api/items/1", { expectUpdated: colored.body.card.card.updated, changes: { fields: { ask: "Pick the cache: a TTL or a version key; I recommend the TTL." } } });
     expect(asked.body.summary).toMatchObject({ ask: "Pick the cache: a TTL or a version key; I recommend the TTL." });
     expect(asked.body.events).toMatchObject([{ text: "changed its ask" }]);
     const cleared = await call<WritePayload>("PUT", "/api/items/1", { changes: { color: null } });
     expect(cleared.body.summary.color).toBeUndefined();
     const wrong = await call<RefusalPayload>("PUT", "/api/items/1", { changes: { color: "teal" } });
-    expect(wrong).toEqual({ status: 422, body: { refused: "usage", message: `Refused: "teal" is not a card colour; the colours are ${PALETTE_WORDS}, or none. Nothing was written.` } });
+    expect(wrong).toEqual({ status: 422, body: { refused: "color", message: `Refused: "teal" is not a card colour; the colours are ${PALETTE_WORDS}, or none. Nothing was written.` } });
     const listed = await call<RefusalPayload>("PUT", "/api/items/1", { changes: { fields: { ask: ["a"] } } });
     expect(listed.status).toBe(422);
     expect(listed.body.message).toBe('Refused: the ask must be a text (what is decided, the options, the recommendation), and is ["a"]. Nothing was written.');

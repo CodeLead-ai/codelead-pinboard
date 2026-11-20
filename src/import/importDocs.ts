@@ -4,6 +4,7 @@ import {
   BoardRefusal,
   cleanText,
   createCards,
+  expandHomeRelative,
   isBoardRefusal,
   readBoard,
   readBoardConfig,
@@ -39,10 +40,11 @@ import {
  *   not started, open question, still open, decision pending, "— open", "Open:", check when).
  *   Anything else is a record, and stays in the document. Every item skipped is in the mapping
  *   with its reason.
- * - The plan's status table (section 8): one task card per row, tagged `plan:<item>`, in the
- *   column the row's status begins with: Done; After, Later, Not, Planned, Parked, Waiting,
- *   Blocked, Queued: Backlog; anything else: In progress. The body is the row's work, measured and
- *   status cells, each labelled.
+ * - A plan's status table, when the plan is named (`plan`; none is read otherwise): the table of
+ *   its section 8 (or `section`), one task card per row, tagged `plan:<item>`, in the column the
+ *   row's status begins with: Done; After, Later, Not, Planned, Parked, Waiting, Blocked, Queued:
+ *   Backlog; anything else: In progress. The body is the row's work, measured and status cells,
+ *   each labelled.
  *
  * Every card is tagged `repo:<repository>`, carries its source document and lines as its first
  * attachment, every other path it names that exists (`path:12` gives the lines; a path in another
@@ -52,12 +54,10 @@ import {
  * as it would replace it, and the mapping says so. The documents are only read. A marker per
  * document in board.json keeps the import from running twice on it.
  */
-export const DEFAULT_PLAN = "behaviour-extraction-plan-2026-10-01.md";
-
 export interface ImportOptions {
-  /** The folder that holds PINNED.md, DECISIONS-PENDING.md and the plan. */
+  /** The folder that holds PINNED.md and DECISIONS-PENDING.md. */
   from: string;
-  /** The plan whose status table is imported; `<from>/behaviour-extraction-plan-2026-10-01.md` when not given. */
+  /** The plan whose status table is imported (a file); no plan is read when not given. */
   plan?: string;
   /** The plan's section that holds the table; "8" when not given. */
   section?: string;
@@ -100,6 +100,8 @@ export interface ImportResult {
   as: string;
   items: ImportedItem[];
   sources: ImportedSource[];
+  /** True when a plan was named (`plan`): its table is among the sources. */
+  planNamed: boolean;
   written: boolean;
 }
 
@@ -406,10 +408,11 @@ export function importDocuments(ctx: BoardContext, options: ImportOptions): Impo
     // The workspace: as given, or the board's (board.json's `workspace`, the repository's parent when it gives none).
     const scope: PathScope = { root: ctx.root, workspace: path.resolve(options.workspace ?? workspaceOf(ctx.root, config)) };
     const repo = options.repo ?? path.basename(ctx.root);
+    // A plan is read only when it is named: no document name of one project stands in for it.
     const sources = [
       { kind: "pinned" as const, file: path.join(fromDir, "PINNED.md") },
       { kind: "decisions" as const, file: path.join(fromDir, "DECISIONS-PENDING.md") },
-      { kind: "plan" as const, file: options.plan ? path.resolve(options.plan) : path.join(fromDir, DEFAULT_PLAN) }
+      ...(options.plan ? [{ kind: "plan" as const, file: path.resolve(options.plan) }] : [])
     ];
     const marked = new Map((config.imports ?? []).map((marker) => [marker.source, marker]));
     for (const source of sources) {
@@ -426,7 +429,7 @@ export function importDocuments(ctx: BoardContext, options: ImportOptions): Impo
 
     /** The text as a card may hold it: paths of this machine rewritten, what the sanitizer removes replaced. */
     const prepare = (text: string, notes: string[]): string => {
-      const rewritten = rewriteMachinePaths(text, scope);
+      const rewritten = rewriteMachinePaths(expandHomeRelative(text, ctx.home), scope);
       for (const written of rewritten.rewritten) notes.push(`a path of this machine is written as ${written}`);
       const cleaned = cleanText({ dir: ctx.dir, root: ctx.root, home: ctx.home, ...(ctx.sanitizer ? { sanitizer: ctx.sanitizer } : {}) }, rewritten.text);
       if (cleaned.secrets > 0) notes.push(`${cleaned.secrets} secret(s) replaced by <redacted>`);
@@ -579,7 +582,7 @@ export function importDocuments(ctx: BoardContext, options: ImportOptions): Impo
       const fresh = readBoardConfig(ctx.dir);
       writeBoardConfig(ctx.dir, fresh, { ...fresh.config, imports: [...(fresh.config.imports ?? []), ...markers] });
     }
-    return { from: relativeToRoot(fromDir) || ".", as, items: drafts.map((draft) => draft.item), sources: sourceSummaries, written: !options.dryRun };
+    return { from: relativeToRoot(fromDir) || ".", as, items: drafts.map((draft) => draft.item), sources: sourceSummaries, planNamed: options.plan !== undefined && options.plan !== "", written: !options.dryRun };
   });
 }
 
@@ -605,6 +608,7 @@ export function formatImportMapping(result: ImportResult, config?: BoardConfig):
       for (const note of item.notes) lines.push(`${" ".repeat(13)}${note}`);
     }
   }
+  if (!result.planNamed) lines.push("", "No plan was named, so no status table was read: give --plan <file> to import one.");
   return lines;
 }
 
