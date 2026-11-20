@@ -107,7 +107,9 @@ describe.skipIf(!browser)("the For CodeLead tag on the page", () => {
     expect(await send.count()).toBe(1);
     await page.route("**/api/items/8", async (route) => {
       if (route.request().method() === "PUT") {
-        updateCard(ctx, 8, { as: "person", changes: { addTags: ["area:review"] } });
+        // Another write meanwhile, a minute later: times are whole seconds, and a write in the same second as the
+        // previous test's would leave `updated` as the page read it, so the page's write would not be stale.
+        updateCard({ ...ctx, now: () => new Date(Date.now() + 60_000) }, 8, { as: "person", changes: { addTags: ["area:review"] } });
       }
       await route.continue();
     });
