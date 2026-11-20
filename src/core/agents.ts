@@ -66,11 +66,12 @@ An event with \`data.decided\` is the person's answer to a decision card, record
 
 ## Never
 - Start code work because of a card. Work starts when the person asks for it in the session.
-- Move a card into ${list(personColumns, "or") || "a person's column"}: ${personColumns.length === 1 ? "that column is" : "those columns are"} the person's. Nor move one out of ${personColumns.length === 1 ? "it" : "them"}: the commands refuse both.
+- Move a card into ${list(personColumns, "or") || "a person's column"}: ${personColumns.length === 1 ? "that column is" : "those columns are"} the person's.
 - Edit or remove a comment, yours or another's; you only append to the thread.
 - Write secrets (keys, passwords, tokens), names the project keeps private
   (\`${PRIVATE_NAMES_FILE}\`), or paths of your machine (\`<home>/…\`, \`C:\\…\`) into a card. Cite files
   by their path in the repository, or \`<repository>:<path>\` for another repository. The commands refuse such a text, a path that starts with \`~/\` included.
+- Move a card out of ${list(personColumns, "or") || "a person's column"}: the commands refuse it, as they refuse a move into ${personColumns.length === 1 ? "it" : "them"}.
 
 ## Work the person asked for
 When it is done: comment with what landed (the commit, the evidence record's id, the files),

@@ -167,13 +167,13 @@ describe("the design's examples are the formats (golden files)", () => {
       "",
       "## Never",
       "- Start code work because of a card. Work starts when the person asks for it in the session.",
-      "- Move a card into Pinned or Done: those columns are the person's. Nor move one out of them: the",
-      "  commands refuse both.",
+      "- Move a card into Pinned or Done: those columns are the person's.",
       "- Edit or remove a comment, yours or another's; you only append to the thread.",
       "- Write secrets (keys, passwords, tokens), names the project keeps private",
       "  (`private-names.txt`), or paths of your machine (`<home>/…`, `C:\\…`) into a card. Cite files",
       "  by their path in the repository, or `<repository>:<path>` for another repository. The commands",
       "  refuse such a text, a path that starts with `~/` included.",
+      "- Move a card out of Pinned or Done: the commands refuse it, as they refuse a move into them.",
       "",
       "## Work the person asked for",
       "When it is done: comment with what landed (the commit, the evidence record's id, the files),",
@@ -196,7 +196,8 @@ describe("the design's examples are the formats (golden files)", () => {
     const guide = agentsGuide(config);
     // No In progress among its columns: no convention about it to say.
     expect(guide).toContain("- You may move a card into To do and Check; add tags and relations; create cards.\n");
-    expect(guide.replace(/\n  /g, " ")).toContain("- Move a card into Waiting on me: that column is the person's. Nor move one out of it: the commands refuse both.");
+    expect(guide).toContain("- Move a card into Waiting on me: that column is the person's.\n");
+    expect(guide.replace(/\n  /g, " ")).toContain("- Move a card out of Waiting on me: the commands refuse it, as they refuse a move into it.");
     expect(guide).toContain("put the card in\n  To do (or another column you may move into)");
     expect(guide).toContain("(how often to check; 60 when this file was written)");
     // The cards of a conversation land in the board's first column (and its backlog, when it has one).

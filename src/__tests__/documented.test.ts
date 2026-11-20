@@ -218,7 +218,7 @@ describe("the guide's rules, enforced by the commands: each refusal exits 1, wit
     const guide = agentsGuide(config).replace(/\n {2}/g, " ");
     expect(guide).toContain("`color` is the person's colour mark: leave it (the commands refuse it from an agent).");
     expect(guide).toContain("write your recommendation in `fields.ask`. The commands refuse it.");
-    expect(guide).toContain("- Move a card into Pinned or Done: those columns are the person's. Nor move one out of them: the commands refuse both.");
+    expect(guide).toContain("- Move a card out of Pinned or Done: the commands refuse it, as they refuse a move into them.");
     expect(guide).toContain("In progress (only when the person asked for the work in the session) and For review; add tags and relations; create cards. No command can tell whether the person asked for the work, so that rule is yours to keep.");
     expect(guide).toContain("Agents do not add or remove the tag (the commands refuse an agent's adding it: ask the person in the thread)");
     expect(guide).toContain("The commands refuse such a text, a path that starts with `~/` included.");
