@@ -1,5 +1,6 @@
 import os from "node:os";
 import path from "node:path";
+import { redactSecrets } from "./secretRules.js";
 
 /**
  * What the guard (guard.ts) asks of a sanitizer: the text with every secret written as
@@ -22,27 +23,19 @@ export interface SanitizerPaths {
 export type SanitizerFactory = (paths: SanitizerPaths) => TextSanitizer;
 
 /**
- * The secrets a text may hold: a connection-string password, a provider's key (OpenRouter's
- * `sk-or-…`, Anthropic's `sk-ant-…`) and a bearer token.
- */
-/** A password inside an address, `scheme://user:password@host`: the password alone becomes `<redacted>`. */
-const URL_PASSWORD = /\b([a-z][a-z0-9+.-]*:\/\/[^\s\/:@]*):([^\s@\/]+)@/gi;
-
-const SECRET_PATTERNS = [
-  /(Password|Pwd|pwd|password)=([^;"'\s]+)/g,
-  /sk-or-[A-Za-z0-9\-_]+/g,
-  /sk-ant-[A-Za-z0-9\-_]+/g,
-  /\b(Bearer)\s+[A-Za-z0-9\-_.]{20,}/g
-];
-
-/**
- * The board's own sanitizer: the part of CodeLead's audit-pack sanitizer that the guard uses
- * (copied from it, with its tests for that part), so that the package depends on nothing of the
- * host's. The repository's path and the home folder become `<repo>` and `<home>`, in every
- * spelling a text may carry them (as given, resolved, with either slash, and with the backslashes
- * doubled as JSON writes them), the longest first so that the repository wins over the home
- * folder it is in; connection-string passwords, provider keys and bearer tokens become
- * `<redacted>`.
+ * The board's own sanitizer: the part of CodeLead's sanitizer that the guard uses (copied from
+ * it, with its tests for that part), so that the package depends on nothing of the host's. In
+ * this order:
+ *
+ *   1. the secret rules (secretRules.ts, as data): private keys, known token shapes, Bearer and
+ *      Basic credentials, an address's password, connection strings, XML settings, quoted and
+ *      unquoted key/value secrets, command-line passwords; each secret becomes one `<redacted>`;
+ *   2. the repository's path and the home folder become `<repo>` and `<home>`, in every spelling
+ *      a text may carry them (as given, resolved, with either slash, and with the backslashes
+ *      doubled as JSON writes them), the longest first so that the repository wins over the home
+ *      folder it is in.
+ *
+ * Paths go last, so that a rule sees a value as it was written (a path is never a secret).
  */
 export class BoardSanitizer implements TextSanitizer {
   private readonly replacements: Array<[string, string]>;
@@ -61,11 +54,7 @@ export class BoardSanitizer implements TextSanitizer {
   }
 
   public text(text: string): string {
-    let result = text;
-    result = result.replace(URL_PASSWORD, "$1:<redacted>@");
-    for (const pattern of SECRET_PATTERNS) {
-      result = result.replace(pattern, (whole, first: string | undefined) => (first && /^(Password|Pwd|pwd|password|Bearer)$/.test(first) ? `${first}${whole.includes("=") ? "=" : " "}<redacted>` : "<redacted>"));
-    }
+    let result = redactSecrets(text);
     for (const [needle, placeholder] of this.replacements) {
       for (const variant of new Set([needle, needle.replaceAll("\\", "\\\\"), needle.replaceAll("\\", "/")])) {
         if (variant && result.includes(variant)) {

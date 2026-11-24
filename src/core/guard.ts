@@ -6,10 +6,10 @@ import { expandHomeRelative, rewriteHomePaths, rewriteMachinePaths } from "./pat
 import { defaultSanitizer, type SanitizerFactory, type TextSanitizer } from "./sanitize.js";
 
 /**
- * What must never be written into a card: a secret (a key, a connection-string password, a
- * bearer token), a path of this machine (under the repository or the home folder), and a name the
- * project keeps private. Secrets and paths are found by a sanitizer: a text is refused when the
- * sanitizer would change it there. The board's own (sanitize.ts) is used unless the host gives its
+ * What must never be written into a card: a secret (a key or a token, a password, a private key:
+ * the rules of secretRules.ts), a path of this machine (under the repository or the home folder),
+ * and a name the project keeps private. Secrets and paths are found by a sanitizer: a text is
+ * refused when the sanitizer would change it there. The board's own (sanitize.ts) is used unless the host gives its
  * own (the scope's `sanitizer`): CodeLead gives its audit pack's, so that the board and the audit
  * pack hold one set of rules. Private names are listed, one per line, in `private-names.txt` in
  * the board folder, a file git ignores, so the list itself is never recorded.

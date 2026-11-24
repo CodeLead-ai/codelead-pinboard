@@ -531,12 +531,23 @@ What the participant has seen. For an agent it is also its check cursor.
 
 A write is refused when its text holds:
 
-- **a secret**: a key, a connection-string password (`Password=…`, or inside an address,
-  `scheme://user:password@host`), a bearer token;
+- **a secret**: a key or a token (a provider's, a cloud's, a code host's), a password (in a
+  settings line, a JSON or XML file, a connection string, an address, a command line), a bearer
+  token, a private key;
 - **a path of this machine** outside the workspace (under the home folder), written in full or
   from `~` (`~/notes/log.txt`, when the home folder holds `notes`; an application's own
   `~/Views/Home/Index.cshtml` names nothing there, and is written as it is);
 - **a private name**, listed in `private-names.txt`.
+
+**What the secret guard catches, and what it cannot.** The guard looks for a value, not for a
+word. A card may talk about passwords and keys: "the token expired", `` `Password=` `` in a
+code span, `scheme://user:password@host` as an example, `<your password>` or `${DB_PASSWORD}`
+in place of one. It refuses the card when a value is there: `DB_PASSWORD=…` with a real value
+after it, `"password": "…"` in JSON, a password in a connection string or an address, a key in
+a known shape (OpenAI, Anthropic, AWS, GitHub, GitLab, Slack, Stripe, Google and others), a
+private key. The rules are in `src/core/secretRules.ts`. They cannot know every shape: a secret
+written in a shape no rule knows, such as "my password is …" in a sentence, can still pass. So
+read what you paste into a card, and say where a secret is kept rather than what it is.
 
 A path under the repository or the workspace is not refused: it is rewritten as the card cites
 it, and the write's event lists each rewrite. `--rewrite-paths` writes a home-folder path as
@@ -594,7 +605,7 @@ Every refusal, by the code `--json` gives it:
 | `relation` | 1 | A card related to itself; a kind of relation the board does not have; a batch's relation to a key no card of it has. |
 | `text` | 1 | An empty comment, title or tag; a title, status or tag of more than one line. |
 | `structure` | 1 | A line the card would read as its own structure (`## Thread`, a comment's heading). |
-| `secret` | 1 | The text holds a secret (a key, a connection-string password, a bearer token). |
+| `secret` | 1 | The text holds a secret (a key or a token, a password, a private key). |
 | `machine-path` | 1 | The text holds a path of this machine outside the workspace. |
 | `private-name` | 1 | The text holds a name of `private-names.txt`. |
 | `stale` | 1 | The card changed since it was read (`--if-updated`), or while it was written. |
