@@ -11,6 +11,9 @@ import type {
   PreferencesDocument,
   PreferencesPayload,
   RefusalPayload,
+  ScheduleInput,
+  SchedulesPayload,
+  ScheduleWritePayload,
   WritePayload
 } from "../../server/contract.js";
 
@@ -81,7 +84,12 @@ export const api = {
   savePreferences: (preferences: PreferencesDocument): Promise<PreferencesPayload> => call("PUT", "api/preferences", preferences),
   /** One operation on several cards: each card's write its own; a refusal is that card's alone. */
   batch: (input: BatchInput): Promise<BatchPayload> => call("POST", "api/cards/batch", input),
-  clearAll: (): Promise<NotificationsPayload> => call("POST", "api/check/ack", {})
+  clearAll: (): Promise<NotificationsPayload> => call("POST", "api/check/ack", {}),
+  /** The board's schedules, each with its next time in its zone and in UTC, and its last card. */
+  schedules: (): Promise<SchedulesPayload> => call("GET", "api/schedules"),
+  /** A new schedule, as the board's person; `dryRun`: the board's checks and nothing written (the Ready check's words before saving). */
+  addSchedule: (input: ScheduleInput): Promise<ScheduleWritePayload> => call("POST", "api/schedules", input),
+  scheduleState: (name: string, verb: "pause" | "resume" | "remove"): Promise<ScheduleWritePayload> => call("POST", `api/schedules/${encodeURIComponent(name)}/${verb}`, {})
 };
 
 export function wordsOf(error: unknown): string {

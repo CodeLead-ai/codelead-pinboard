@@ -436,6 +436,11 @@ function Tile({ board, card, faded, selected, picked, tabStop, unseen, addressed
           {wait}
         </p>
       ) : null}
+      {card.schedule ? (
+        <p className="tile-scheduled" title={`${participantName(board, card.schedule.by)}'s schedule ${card.schedule.name} made it, for ${card.schedule.due}`} data-testid="tile-scheduled">
+          by the schedule {card.schedule.name}
+        </p>
+      ) : null}
       {notReady ? (
         <p className="tile-not-ready" data-testid="tile-not-ready">
           Cannot go to {board.ready.column ? columnName(board, board.ready.column) : "Ready"} yet: open it to fill in what is missing.

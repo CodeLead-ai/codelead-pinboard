@@ -469,6 +469,11 @@ start and every minute), a desktop app, or `pinboard schedules run` from your sy
 scheduler (cron, launchd, Task Scheduler); a time missed while nothing calls them makes one card at
 the next call.
 
+**On the page**, the clock in the top bar opens **Schedules**: each schedule with its rule, its next
+time in its zone and in UTC, and its last card; **Pause**, **Resume** and **Remove**; and **Add a
+schedule**, a form that shows the board's check of the card (the Ready check's words) before you
+save. A card a schedule made says `by the schedule check-deps` on its tile and in its panel.
+
 **A board made before schedules** works as it is: it needs no new file, and `pinboard schedules`
 says there is none. On a board without Ready, `schedules add` and `schedules run` say that
 `codelead board add-ready` gives it the column.

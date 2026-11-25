@@ -4719,3 +4719,176 @@ dialog.confirm .bulk-hint {
   min-width: 0;
   flex: 1 1 0;
 }
+
+/* ---- schedules: the person's standing asks, each of which puts a card in Ready at its times ---- */
+
+.schedules-wrap {
+  position: relative;
+}
+/* The notification list's frame, a little wider: the list, then the form below it. */
+.schedules {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(82vh, 760px);
+}
+.schedules-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 16px 14px;
+  overflow-y: auto;
+}
+.schedules-intro {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.schedules-intro code {
+  font-family: var(--font-mono);
+  color: var(--ink-2);
+}
+.schedules-said {
+  margin: 0;
+  padding: 7px 10px;
+  border-left: 3px solid var(--ok);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.schedules-body .notes-empty {
+  padding: 6px 0;
+}
+.schedules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.schedule {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-2);
+}
+.schedule-paused {
+  border-style: dashed;
+}
+.schedule-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+.schedule-name {
+  color: var(--ink);
+  font: 600 13px/1.3 var(--font-mono);
+}
+.schedule-rule {
+  color: var(--ink);
+  font-size: 13.5px;
+}
+.schedule-zone,
+.schedule-utc {
+  color: var(--muted);
+  font: 500 11.5px/1.3 var(--font-mono);
+}
+.schedule-next,
+.schedule-card,
+.schedule-last {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.schedule-next time {
+  color: var(--ink);
+  font-weight: 600;
+}
+.schedule-skipped {
+  color: var(--muted);
+}
+.schedule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--link-line);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.schedule-form {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 11px 14px 13px 16px;
+  border: 1px solid var(--ask-border);
+  border-left: 4px solid var(--ask-rule);
+  border-radius: 10px;
+  background: var(--ask-bg);
+}
+.schedule-form .ready-check-label {
+  margin-bottom: 2px;
+}
+.schedule-form fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.schedule-form legend {
+  margin-bottom: 4px;
+  padding: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.schedule-kinds,
+.schedule-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.schedule-kinds .chip,
+.schedule-days .chip {
+  height: 26px;
+  cursor: pointer;
+}
+.schedule-kinds input,
+.schedule-days input {
+  margin: 0;
+  accent-color: var(--accent-a);
+}
+.schedule-every,
+.schedule-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px 10px;
+}
+.schedule-form .refusal {
+  margin: 0;
+}
+/* A card a schedule made: by which schedule, in one line on its tile. */
+.tile-scheduled {
+  margin: 4px 0 0;
+  padding-left: 6px;
+  border-left: 2px solid var(--line-2);
+  color: var(--muted);
+  font-size: 12px;
+}

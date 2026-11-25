@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { archiveCard, getCard, readBoard, readEvents, THEMES, updateCard, type BoardContext } from "../core/index.js";
+import { addSchedule, archiveCard, getCard, readBoard, readEvents, removeSchedule, THEMES, updateCard, type BoardContext } from "../core/index.js";
 import { buildPage, createBoardServer, pageLocation, type BoardServer } from "../server/index.js";
 import { makeDemoBoard } from "./demoBoard.js";
 
@@ -673,6 +673,30 @@ describe.skipIf(!browser)("themes, projects, the board's background and the bulk
     await expect.poll(() => menu.count()).toBe(0);
     await expect.poll(() => page.evaluate("document.activeElement && document.activeElement.dataset.testid")).toBe("theme");
   });
+
+  it("draws the schedules' view, its list and its form, in each of the ten themes with that theme's tokens only, its text at 4.5:1 (7:1 in the high-contrast ones) and its edges at 3:1", async () => {
+    // Made now, due next week: nothing the page's timer makes while the tests run.
+    const now = { ...ctx, now: () => new Date() };
+    addSchedule(now, "robin", { name: "check-deps", rule: { kind: "weekly", days: ["mon"], at: "09:00" }, card: { type: "task", title: "Check the dependencies", tags: ["for:claude"], fields: { definitionOfDone: "npm test passes", mayTouch: ["package.json"], limitMinutes: 30 } } });
+    const controls = JSON.stringify("button, input, select, textarea, .select, .search, .field-input");
+    const found: string[] = [];
+    for (const theme of THEMES) {
+      await showTheme(theme.id);
+      await page.getByTestId("schedules-button").click();
+      const view = page.getByTestId("schedules");
+      await view.locator("[data-schedule='check-deps']").waitFor();
+      await view.getByTestId("schedule-add").click();
+      await view.getByTestId("schedule-form").waitFor();
+      for (const line of await evaluate<string[]>("window.__checks.outsideTokens()")) found.push(`${theme.id} tokens: ${line}`);
+      const min = theme.group === "contrast" ? 7 : 4.5;
+      for (const line of await evaluate<string[]>(`window.__checks.contrast("[data-testid=schedules]", ${min}, 3, ${controls})`)) found.push(`${theme.id}: ${line}`);
+      if (theme.id === "paper" || theme.id === "navy") await shot(`schedules-${theme.id}`);
+      await page.keyboard.press("Escape");
+      await expect.poll(() => view.count()).toBe(0);
+    }
+    expect(found).toEqual([]);
+    removeSchedule(now, "robin", "check-deps");
+  }, 120_000);
 
   it("raised no error in the page and sent no request off the machine along the way", () => {
     expect(problems).toEqual([]);

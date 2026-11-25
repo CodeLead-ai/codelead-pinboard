@@ -284,6 +284,17 @@ export function CardPanel({ board, id, detail, error, below, crumbs, cards, know
                   </dd>
                 </div>
               ) : null}
+              {card.schedule ? (
+                <div className="wide" data-testid="panel-schedule">
+                  <dt>Made</dt>
+                  <dd>
+                    by the schedule <b>{card.schedule.name}</b>, {participantName(board, card.schedule.by)}'s ask{" · due "}
+                    <time dateTime={card.schedule.due} title={card.schedule.due}>
+                      {clock(card.schedule.due, now)}
+                    </time>
+                  </dd>
+                </div>
+              ) : null}
               <div>
                 <dt>Status</dt>
                 <dd>
@@ -560,11 +571,12 @@ export function CardPanel({ board, id, detail, error, below, crumbs, cards, know
 
 /**
  * The thread as the panel shows it: the comments, and between them the events of the card's claims
- * (given from Ready, renewed, given back, ran out, ended), each where it happened; a comment written in
- * the same second as an event comes first (a release's reason, then the release).
+ * (given from Ready, renewed, given back, ran out, ended) and of the schedule that made it (put it in
+ * Ready; due again while it was open), each where it happened; a comment written in the same second as
+ * an event comes first (a release's reason, then the release).
  */
 function threadItems(thread: Array<{ author: string; at: string; body: string }>, activity: EventItem[]): Array<{ comment?: { author: string; at: string; body: string }; event?: EventItem }> {
-  const events = activity.filter((event) => event.kind.startsWith("claim.")).reverse();
+  const events = activity.filter((event) => event.kind.startsWith("claim.") || event.kind.startsWith("schedule.")).reverse();
   const items: Array<{ comment?: { author: string; at: string; body: string }; event?: EventItem }> = [];
   let next = 0;
   for (const comment of thread) {

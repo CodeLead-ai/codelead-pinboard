@@ -25,6 +25,7 @@ import { FilterBar } from "./FilterBar.js";
 import { cardAbove, classes, columnCards, columnName, keyOf, lastColumnOf, matches, onBoard, rankFor, readFilter, readStack, writeQuery, type Filter, type ReadyRefusal } from "./model.js";
 import { inProject, NO_PROJECT, projectEntries, projectTags, readProject } from "./projects.mjs";
 import { ProjectMenu } from "./ProjectMenu.js";
+import { SchedulesMenu } from "./Schedules.js";
 import { extend, inBoardOrder, prune, selectAll, toggle } from "./selection.mjs";
 import { ThemeMenu } from "./ThemeMenu.js";
 import { TopBar, type LiveState } from "./TopBar.js";
@@ -169,6 +170,9 @@ export function App() {
   const [composer, setComposer] = useState<string | null>(null);
   const [capsule, setCapsule] = useState(false);
   const [keys, setKeys] = useState(false);
+  // The schedules' view, and a count the stream raises when they may have changed (the open view reads them again).
+  const [schedulesOpen, setSchedulesOpen] = useState(false);
+  const [schedulesVersion, setSchedulesVersion] = useState(0);
   const [prefs, setPrefs] = useState<PreferencesDocument | null>(null);
   const prefsRef = useRef<PreferencesDocument | null>(null);
   prefsRef.current = prefs;
@@ -360,12 +364,14 @@ export function App() {
         position.current = item.position;
       }
       refreshNotes();
+      if (item.kind.startsWith("schedule.")) setSchedulesVersion((version) => version + 1);
       if (item.item !== undefined) {
         const key = keyOf(item.item);
         refreshDetail(key);
         if (item.by !== personRef.current) flash(key);
       }
     });
+    source.addEventListener("schedules", () => setSchedulesVersion((version) => version + 1));
     source.addEventListener("card", (event) => {
       const card = JSON.parse((event as MessageEvent<string>).data) as CardMessage;
       setBoard((previous) => applyCardMessage(previous, card));
@@ -810,6 +816,7 @@ export function App() {
         else if (capsule) setCapsule(false);
         else if (keys) setKeys(false);
         else if (typing) target?.blur();
+        else if (schedulesOpen) setSchedulesOpen(false);
         else if (composer) setComposer(null);
         else if (stackRef.current.length > 0) {
           popPanel();
@@ -888,7 +895,7 @@ export function App() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [board, navigable, selected, moving, capsule, keys, composer, confirm, focusTile, openCard, popPanel, compose, tileRefs, picked]);
+  }, [board, navigable, selected, moving, capsule, keys, schedulesOpen, composer, confirm, focusTile, openCard, popPanel, compose, tileRefs, picked]);
 
   // ------------------------------------------------------------------------------------------
 
@@ -1085,6 +1092,20 @@ export function App() {
         live={live}
         projectMenu={board ? <ProjectMenu entries={projects} project={project} onPick={chooseProject} /> : null}
         themeMenu={<ThemeMenu choices={themeChoices} shown={shownTheme} project={project} own={ownChoices} onPick={pickChoices} onUseDefault={useDefaultChoices} />}
+        schedulesMenu={
+          board ? (
+            <SchedulesMenu
+              board={board}
+              open={schedulesOpen}
+              onToggle={setSchedulesOpen}
+              version={schedulesVersion}
+              onOpenCard={(key) => {
+                setSchedulesOpen(false);
+                openCard(key, "root");
+              }}
+            />
+          ) : null
+        }
         notes={notes}
         open={capsule}
         onToggle={setCapsule}

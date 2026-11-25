@@ -216,6 +216,14 @@ export const KeysIcon = (props: IconProps) => (
   </Svg>
 );
 
+/** The schedules: a clock. */
+export const ClockIcon = (props: IconProps) => (
+  <Svg {...props}>
+    <circle cx="8" cy="8" r="6.2" />
+    <path d="M8 4.6V8l2.4 1.6" />
+  </Svg>
+);
+
 export const ActivityIcon = (props: IconProps) => (
   <Svg {...props}>
     <path d="M1.6 8.4h2.8l1.8-4.6 3.4 8.6 1.8-4h3" />

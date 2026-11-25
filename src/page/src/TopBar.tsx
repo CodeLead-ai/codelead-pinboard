@@ -12,6 +12,8 @@ export interface TopBarProps {
   projectMenu: ReactNode;
   /** The theme and background menu. */
   themeMenu: ReactNode;
+  /** The schedules' view (Schedules.tsx), beside the keyboard's. */
+  schedulesMenu?: ReactNode;
   notes: NotificationsPayload | null;
   open: boolean;
   onToggle: (open: boolean) => void;
@@ -42,7 +44,7 @@ const LIVE_WORDS: Record<LiveState, [string, string]> = {
   offline: ["offline", "The board's process does not answer. Is `codelead board serve` still running? The page reconnects on its own."]
 };
 
-export function TopBar({ board, live, projectMenu, themeMenu, notes, open, onToggle, keys, onKeys, onOpenCard, onClearAll, now }: TopBarProps) {
+export function TopBar({ board, live, projectMenu, themeMenu, schedulesMenu, notes, open, onToggle, keys, onKeys, onOpenCard, onClearAll, now }: TopBarProps) {
   const count = notes?.count ?? 0;
   const wrap = useRef<HTMLDivElement>(null);
   const keysWrap = useRef<HTMLDivElement>(null);
@@ -107,6 +109,7 @@ export function TopBar({ board, live, projectMenu, themeMenu, notes, open, onTog
             </div>
           ) : null}
         </div>
+        {schedulesMenu}
         {themeMenu}
         <div className="capsule-wrap" ref={wrap}>
           <button
