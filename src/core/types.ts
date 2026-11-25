@@ -45,6 +45,20 @@ export interface BoardConfig {
   imports?: ImportMarker[];
   /** The folder of the repositories a card may cite as `<repository>:<path>`, relative to the repository; `..` (its parent) when not given. */
   workspace?: string;
+  /** How the board gives Ready cards to agents (dispatch.ts): how many an agent holds at a time, and how long a claim lasts. */
+  dispatch?: DispatchSettings;
+  [key: string]: unknown;
+}
+
+/**
+ * board.json's `dispatch`, each key optional: `perAgent` (how many cards an agent holds at a time; 1
+ * when not given), `leaseMinutes` (how long a claim lasts before it is renewed; 30), `maxLeaseMinutes`
+ * (the longest lease a take or a renewal may ask for; 240).
+ */
+export interface DispatchSettings {
+  perAgent?: number;
+  leaseMinutes?: number;
+  maxLeaseMinutes?: number;
   [key: string]: unknown;
 }
 
@@ -104,6 +118,8 @@ export interface CardData {
   status?: string;
   /** When the card left the board; it stays in its file and stays searchable. */
   archived?: string;
+  /** The agent the board gave the card to from Ready, and until when it holds it (a lease it renews while it works). */
+  claim?: Claim;
   /** Front-matter keys this core does not know, as read: kept in the file, never dropped. */
   extra: YamlMap;
   description: string;
@@ -115,6 +131,20 @@ export interface Card extends CardData {
   file: string;
   /** A digest of the file's text as it was read: what a write compares before it replaces the file. */
   hash: string;
+}
+
+/**
+ * A claim: the card was given to an agent from Ready (`take`), and the agent holds it while it works.
+ * It is a lease, not a flag: `until` is when it runs out unless the agent renews it, and a claim that
+ * ran out is ended at the next take, which returns the card to Ready. Front-matter key `claim`.
+ */
+export interface Claim {
+  /** The agent that holds the card (a participant's id). */
+  by: string;
+  /** When the board gave it the card (UTC). */
+  since: string;
+  /** When the claim runs out unless it is renewed (UTC). */
+  until: string;
 }
 
 /**
@@ -179,7 +209,14 @@ export const EVENT_KINDS = [
   "relation.removed",
   "tag.added",
   "tag.removed",
-  "attachment.added"
+  "attachment.added",
+  // A claim (dispatch.ts): the board gave the card to an agent from Ready; the agent renewed it; gave it back to Ready; it ran
+  // out and the card went back to Ready; it ended (handed to For review, or the person moved or archived the card).
+  "claim.taken",
+  "claim.renewed",
+  "claim.released",
+  "claim.expired",
+  "claim.ended"
 ] as const;
 
 export type EventKind = (typeof EVENT_KINDS)[number];

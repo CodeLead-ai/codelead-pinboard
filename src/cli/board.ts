@@ -35,6 +35,9 @@ import {
   readBoardConfig,
   refusalReason,
   relationsOf,
+  releaseCard,
+  renewClaim,
+  takeCard,
   TYPE_FIELDS,
   unarchiveCard,
   updateCard,
@@ -175,6 +178,19 @@ export interface BoardSetOptions extends Common, PathOptions {
 export interface BoardArchiveOptions extends Common {
   as?: string;
   ifUpdated?: string;
+}
+export interface BoardTakeOptions extends Common {
+  as?: string;
+  /** How long to hold the card, in minutes (the board's lease when not given). */
+  lease?: string;
+}
+export interface BoardRenewOptions extends Common {
+  as?: string;
+  lease?: string;
+}
+export interface BoardReleaseOptions extends Common, PathOptions {
+  as?: string;
+  reason?: string;
 }
 export interface BoardTidyOptions extends Common {
   imported?: boolean;
@@ -789,6 +805,87 @@ export async function runBoardMove(id: string | string[], options: BoardMoveOpti
   });
 }
 
+/** `--lease <minutes>`: a number of minutes above 0 (the board says how many at most). */
+function leaseOf(text: string | undefined): number | undefined {
+  if (text === undefined) return undefined;
+  if (!/^\s*\d+(\.\d+)?\s*$/.test(text) || !(Number(text) > 0)) throw new UsageError(`"${text}" is not a lease: give a number of minutes above 0 (30, or 1.5).`);
+  return Number(text);
+}
+
+/** A Ready field's value as a line says it: a text, or a list joined with commas. */
+function fieldLine(value: YamlValue | undefined): string {
+  if (value === undefined || value === null) return "";
+  return Array.isArray(value) ? value.map((entry) => (typeof entry === "string" ? entry : JSON.stringify(entry))).join(", ") : typeof value === "string" ? value : JSON.stringify(value);
+}
+
+/**
+ * `take --as <agent>`: the agent asks the board for its card (the core's `takeCard`). The board gives
+ * the next Ready card it may work, moved to In progress and held for it, or none, and says why. Exit 0
+ * either way (`--json`: `given` says which); 1 when a rule refuses the ask (a person asks, a lease too
+ * long, the board busy).
+ */
+export async function runBoardTake(options: BoardTakeOptions, dependencies: BoardCliDependencies = {}): Promise<number> {
+  return run(options, dependencies, (ctx, output) => {
+    const as = need(options.as, "take needs --as <agent>: the agent that asks for its card.");
+    const lease = leaseOf(options.lease);
+    const result = takeCard(ctx, { as, ...(lease !== undefined ? { leaseMinutes: lease } : {}) });
+    if (options.json) {
+      output(JSON.stringify(result, null, 2));
+      return 0;
+    }
+    const command = dependencies.command ?? "codelead board";
+    const lines = result.swept.map((entry) => `Back to Ready first: #${String(entry.card)} ${entry.title} (the claim of ${entry.holder} ran out at ${entry.until}).`);
+    if (!result.given) {
+      output([...lines, result.message].join("\n"));
+      return 0;
+    }
+    const { card, claim } = result;
+    const limits = [
+      ...(card.limitMinutes !== undefined ? [`${fieldLine(card.limitMinutes)} minutes`] : []),
+      ...(card.limitMoney !== undefined ? [`${fieldLine(card.limitMoney)} in money`] : [])
+    ];
+    lines.push(
+      `Took #${String(card.id)} (${card.type}): ${card.title}`,
+      `${claim.by} holds it until ${claim.until} (${result.minutes} minutes): renew it while you work (\`${command} renew ${String(card.id)} --as ${claim.by}\`), and hand it to For review when it is done.`,
+      `Done when: ${fieldLine(card.definitionOfDone)}`,
+      `May touch: ${fieldLine(card.mayTouch)}`,
+      `Limit: ${limits.join(", ")}`,
+      path.relative(dependencies.cwd?.() ?? process.cwd(), path.join(ctx.dir, card.file))
+    );
+    output(lines.join("\n"));
+    return 0;
+  });
+}
+
+/** `renew <id> --as <agent>`: the agent that holds the card extends its claim while it works (the core's `renewClaim`). */
+export async function runBoardRenew(id: string, options: BoardRenewOptions, dependencies: BoardCliDependencies = {}): Promise<number> {
+  return run(options, dependencies, (ctx, output) => {
+    const cardId = cardIdOf(id);
+    const as = need(options.as, "renew needs --as <agent>: the agent that holds the card.");
+    const lease = leaseOf(options.lease);
+    const result = renewClaim(ctx, cardId, { as, ...(lease !== undefined ? { leaseMinutes: lease } : {}) });
+    if (options.json) {
+      output(JSON.stringify({ card: result.card, claim: result.claim, minutes: result.minutes, events: result.events }, null, 2));
+      return 0;
+    }
+    output(`#${String(result.card.id)}: ${result.claim.by} holds it until ${result.claim.until} (${result.minutes} minutes).`);
+    return 0;
+  });
+}
+
+/** `release <id> --as <agent> --reason <text>`: the agent that holds the card gives it back to Ready, with the reason in its thread (the core's `releaseCard`). */
+export async function runBoardRelease(id: string, options: BoardReleaseOptions, dependencies: BoardCliDependencies = {}): Promise<number> {
+  return run(options, dependencies, (ctx, output) => {
+    const cardId = cardIdOf(id);
+    const as = need(options.as, "release needs --as <agent>: the agent that holds the card.");
+    const reason = need(options.reason, 'release needs --reason <text>: why the card goes back (the person reads it in the card\'s thread), as --reason "The tests need a database this machine does not have."');
+    const result = releaseCard(ctx, cardId, { as, reason, ...homePaths(options) });
+    const { config } = readBoardConfig(ctx.dir);
+    output(writeSummary(result, options.json, `Gave #${String(result.card.id)} back to ${columnName(config, result.card.column)}, with the reason in its thread.`));
+    return 0;
+  });
+}
+
 /** `archive <ids…>` (a person only): each card leaves the board and stays in its file; `unarchive` brings it back. */
 export async function runBoardArchive(id: string | string[], options: BoardArchiveOptions, dependencies: BoardCliDependencies = {}, back = false): Promise<number> {
   return run(options, dependencies, (ctx, output) => {
@@ -877,11 +974,13 @@ export async function runBoardValidate(options: Common, dependencies: BoardCliDe
       return result.problems.length > 0 ? 1 : 0;
     }
     const counts = `${result.cards} card${result.cards === 1 ? "" : "s"}, ${result.events} event${result.events === 1 ? "" : "s"}, ${result.cursors} cursor${result.cursors === 1 ? "" : "s"}`;
+    // A note is no problem: a claim whose time passed, which the next take ends.
+    const notes = (result.notes ?? []).map((note) => `  Note: ${note.file}: ${note.message}`);
     if (result.problems.length === 0) {
-      output(`The board is valid: ${counts}.`);
+      output([`The board is valid: ${counts}.`, ...notes].join("\n"));
       return 0;
     }
-    output([`The board has ${result.problems.length} problem${result.problems.length === 1 ? "" : "s"} (${counts}):`, ...result.problems.map((problem) => `  ${problem.file}: ${problem.message}`)].join("\n"));
+    output([`The board has ${result.problems.length} problem${result.problems.length === 1 ? "" : "s"} (${counts}):`, ...result.problems.map((problem) => `  ${problem.file}: ${problem.message}`), ...notes].join("\n"));
     return 1;
   });
 }
@@ -1181,7 +1280,7 @@ export function createBoardCommand(host: BoardHost = {}): Command {
   board.addCommand(
     rewritable(common(new Command("move")))
       .description(
-        "Move one card, or several, to a column (an agent: only into agents.mayMoveTo, never a person's column); into Ready only a card that says how to tell it is done, what it may touch and its limit; several cards keep their order there, and a refusal of one leaves the others moved"
+        "Move one card, or several, to a column (an agent: only into agents.mayMoveTo, never a person's column, never out of Ready: take gives an agent its card); into Ready only a card that says how to tell it is done, what it may touch and its limit; several cards keep their order there, and a refusal of one leaves the others moved"
       )
       .argument("<ids...>", "the card's id, or several ids (3 4 7)")
       .option("--to <column>", "the column (its id or name)")
@@ -1216,6 +1315,31 @@ export function createBoardCommand(host: BoardHost = {}): Command {
       .option("--unset-field <name>", "remove a field, one the card keeps from another type too (repeatable)", collect)
       .option("--if-updated <time>", "refuse when the card's updated is not this (a stale write); with one id only")
       .action(async (ids: string[], options: BoardSetOptions) => exit(await runBoardSet(ids, options, deps)))
+  );
+  board.addCommand(
+    common(new Command("take"))
+      .description(
+        "An agent asks the board for its card: the next Ready card it may work (its own for:<agent> cards first, then any agent's, top of Ready first), moved to In progress and held for it by a claim it renews while it works; or none, and why"
+      )
+      .option("--as <agent>", "the agent that asks")
+      .option("--lease <minutes>", "how long to hold the card before the claim runs out unless renewed (default: the board's dispatch.leaseMinutes, 30)")
+      .action(async (options: BoardTakeOptions) => exit(await runBoardTake(options, deps)))
+  );
+  board.addCommand(
+    common(new Command("renew"))
+      .description("The agent that holds a card extends its claim while it works: it runs the lease again from now")
+      .argument("<id>", "the card's id")
+      .option("--as <agent>", "the agent that holds the card")
+      .option("--lease <minutes>", "how long from now (default: the board's dispatch.leaseMinutes, 30)")
+      .action(async (id: string, options: BoardRenewOptions) => exit(await runBoardRenew(id, options, deps)))
+  );
+  board.addCommand(
+    rewritable(common(new Command("release")))
+      .description("The agent that holds a card gives it back: it returns to Ready, with the reason in its thread (the person moves a card instead)")
+      .argument("<id>", "the card's id")
+      .option("--as <agent>", "the agent that holds the card")
+      .option("--reason <markdown>", "why it goes back, for the person to read in the thread")
+      .action(async (id: string, options: BoardReleaseOptions) => exit(await runBoardRelease(id, options, deps)))
   );
   board.addCommand(
     common(new Command("archive"))

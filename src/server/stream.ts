@@ -7,6 +7,7 @@ import {
   LOCK_FILE,
   readBoard,
   readEvents,
+  readyWaits,
   synthesizeEvents,
   type BoardConfig,
   type BoardContext,
@@ -67,6 +68,8 @@ export class BoardStream {
   private lines = 0;
   /** Each card's file digest as last announced, by id. */
   private cards = new Map<string, string>();
+  /** What kept each card in Ready from being given, as last announced, by id (the tile's line). */
+  private waits = new Map<string, string>();
   private unreadable = "";
   private config = "";
   private cursor = "";
@@ -81,6 +84,7 @@ export class BoardStream {
     const view = readBoard(ctx);
     this.lines = readEvents(ctx.dir).count;
     this.cards = new Map(view.cards.map((card) => [String(card.id), card.hash]));
+    this.waits = new Map([...readyWaits(ctx)].map(([key, wait]) => [key, JSON.stringify(wait)]));
     this.unreadable = JSON.stringify(view.unreadable);
     this.config = this.configKey();
     this.cursor = this.cursorText(personOf(view.config).id);
@@ -257,25 +261,29 @@ export class BoardStream {
   }
 
   /**
-   * Announces each card whose file differs from the last announcement, and each card of `placed`
-   * (a new place in its column); returns how many files changed.
+   * Announces each card whose file differs from the last announcement, each card of `placed` (a new
+   * place in its column), and each card in Ready whose reason to wait changed (another card was
+   * claimed, given back or done); returns how many files changed.
    */
   private announceCards(view: BoardView, person: Participant, events: ReadEvent[], placed: ReadonlySet<string> = new Set()): number {
     let byCard: Map<string, ReadEvent[]> | undefined;
     let ranks: Map<string, number> | undefined;
     const next = new Map<string, string>();
+    const waits = readyWaits(this.ctx);
+    const nextWaits = new Map([...waits].map(([key, wait]) => [key, JSON.stringify(wait)]));
     let changed = 0;
     for (const card of view.cards) {
       const key = String(card.id);
       next.set(key, card.hash);
       const fileChanged = this.cards.get(key) !== card.hash;
-      if (!fileChanged && !placed.has(key)) continue;
+      if (!fileChanged && !placed.has(key) && this.waits.get(key) === nextWaits.get(key)) continue;
       byCard ??= eventsByCard(events);
       ranks ??= cardRanks(events, view.cards);
-      const message: CardMessage = { id: card.id, card: summarize(card, view.config, person, byCard.get(key) ?? [], ranks.get(key) ?? 0) };
+      const message: CardMessage = { id: card.id, card: summarize(card, view.config, person, byCard.get(key) ?? [], ranks.get(key) ?? 0, waits.get(key)) };
       this.broadcast("card", message);
       if (fileChanged) changed += 1;
     }
+    this.waits = nextWaits;
     for (const key of this.cards.keys()) {
       if (next.has(key)) continue;
       const message: CardMessage = { id: idOf(key), removed: true };

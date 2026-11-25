@@ -15,9 +15,12 @@ export {
   runBoardMove,
   runBoardNew,
   runBoardReply,
+  runBoardRelease,
+  runBoardRenew,
   runBoardServe,
   runBoardSet,
   runBoardShow,
+  runBoardTake,
   runBoardTidy,
   runBoardValidate,
   type BoardArchiveOptions,
@@ -29,11 +32,14 @@ export {
   type BoardListOptions,
   type BoardMoveOptions,
   type BoardNewOptions,
+  type BoardReleaseOptions,
+  type BoardRenewOptions,
   type BoardReplyOptions,
   type BoardServeDependencies,
   type BoardServeOptions,
   type BoardSetOptions,
   type BoardShowOptions,
+  type BoardTakeOptions,
   type BoardTidyOptions
 } from "./board.js";
 export { consoleLog, type BoardLog } from "./log.js";

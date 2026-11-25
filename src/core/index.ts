@@ -69,6 +69,37 @@ export {
   type WriteResult
 } from "./board.js";
 export { BATCH_KEYS, createBatch, parseBatch, type BatchDefaults, type BatchOptions, type BatchResult } from "./batch.js";
+export {
+  claimOn,
+  claimRanOut,
+  DEFAULT_LEASE_MINUTES,
+  DEFAULT_MAX_LEASE_MINUTES,
+  DEFAULT_PER_AGENT,
+  dispatchOf,
+  placesMeet,
+  placesOf,
+  type Dispatch,
+  type Place,
+  type PlaceNames
+} from "./claim.js";
+export {
+  dispatchView,
+  readyWaits,
+  releaseCard,
+  renewClaim,
+  takeCard,
+  type AgentDispatch,
+  type DispatchView,
+  type GivenCard,
+  type Held,
+  type NothingReason,
+  type RenewResult,
+  type Swept,
+  type TakeResult,
+  type Wait,
+  type WaitReason,
+  type Waiting
+} from "./dispatch.js";
 export { BULK_LIMIT, bulkWrite, PROJECT_PREFIX, projectNameRefusal, refusalReason, type BulkBefore, type BulkCardResult, type BulkInput, type BulkOperation } from "./bulk.js";
 export { appendCommentText, cardFileName, KNOWN_KEYS, normalizeBody, parseCardText, REQUIRED_KEYS, serializeCard, structureLines, THREAD_HEADING, updateCardText } from "./card.js";
 export { cursorPath, readCursor } from "./cursors.js";

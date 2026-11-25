@@ -99,8 +99,9 @@ const PART_KEYS = ["id", "type", "title", "column", "tags", "author", "created",
 
 /**
  * A digest per part of a card: each front-matter key (unknown ones too), the description, the
- * thread. A decision's ask is a part of its own, apart from the other fields, and so is the colour;
- * both only when the card has them, so that a state taken before they existed reads the same.
+ * thread. A decision's ask is a part of its own, apart from the other fields, and so are the colour
+ * and the claim; each only when the card has it, so that a state taken before they existed reads the
+ * same.
  */
 export function partsOf(card: CardData): Record<string, string> {
   const parts: Record<string, string> = {};
@@ -108,6 +109,7 @@ export function partsOf(card: CardData): Record<string, string> {
   for (const key of PART_KEYS) parts[key] = digest(JSON.stringify(key === "fields" ? fields : (card[key] ?? null)));
   if (ask !== undefined) parts.ask = digest(JSON.stringify(ask));
   if (card.color !== undefined) parts.color = digest(JSON.stringify(card.color));
+  if (card.claim !== undefined) parts.claim = digest(JSON.stringify(card.claim));
   for (const [key, value] of Object.entries(card.extra)) parts[`extra.${key}`] = digest(JSON.stringify(value));
   parts.thread = digest(JSON.stringify(card.thread));
   return parts;

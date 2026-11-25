@@ -17,6 +17,7 @@ import {
   writeBoardConfig
 } from "./boardConfig.js";
 import { appendCommentText, cardFileName, fileNameFitsId, normalizeBody, parseCardText, serializeCard, structureLines, updateCardText } from "./card.js";
+import { claimFindings, claimOn, refuseAgentClaimedFields, refuseAgentForTags, requireMayMoveClaimed } from "./claim.js";
 import { cursorProblems, readCursor, writeCursor, type CursorFile } from "./cursors.js";
 import { BoardRefusal } from "./errors.js";
 import { addressedTo, appendEvents, decisionOf, eventsPath, excerpt, readEvents, type ReadEvent } from "./events.js";
@@ -69,6 +70,7 @@ import {
   type Card,
   type CardData,
   type CardId,
+  type Claim,
   type Comment,
   type Cursor,
   type Participant
@@ -86,8 +88,11 @@ import { sameValue, type YamlMap, type YamlValue } from "./yaml.js";
  *   `for:codelead` (the queue for CodeLead; CodeLead itself may).
  * - Ready (ready.ts) is the person's column of the cards an agent may pick up by itself: a card goes
  *   there only when it says how to tell it is done, what it may touch and a limit (`readyGaps`); an
- *   agent takes a card out of it into In progress and nowhere else, and does not change what a card
- *   there says it may do.
+ *   agent moves no card out of it (the board gives an agent its card: `takeCard`, dispatch.ts), and
+ *   does not change what a card there says it may do, nor its `for:` tags.
+ * - A card the board gave an agent carries a claim (claim.ts) while it is in In progress: its holder
+ *   hands it to For review (the claim ends there) or gives it back; no other agent moves it or
+ *   changes what it says it may do; the person's move out of In progress, or archive, ends it.
  * - A write that names the `updated` it read is refused when the card's `updated` differs (a
  *   stale write), and every write is refused when the card's file changed while it was written.
  * - No text holding a secret, a path of this machine or a private name is written (guard.ts). A
@@ -212,8 +217,12 @@ function itemNames(ctx: BoardContext): string[] | undefined {
   }
 }
 
-/** Reads every card file; with `stamped`, each file's stamp is taken before it is read, so that a change made while it is read shows as a different stamp next time. */
-function readItems(ctx: BoardContext, stamped = false): LoadedCard[] {
+/**
+ * Reads every card file; with `stamped`, each file's stamp is taken before it is read, so that a
+ * change made while it is read shows as a different stamp next time. Internal: exported for the
+ * dispatcher, which reads under the board's lock.
+ */
+export function readItems(ctx: BoardContext, stamped = false): LoadedCard[] {
   const folder = path.join(ctx.dir, "items");
   return (itemNames(ctx) ?? []).map((name) => {
     const file = `items/${name}`;
@@ -289,7 +298,8 @@ export function listCards(ctx: BoardContext, filter: CardFilter = {}): { view: B
   return { view, cards: view.cards.filter((card) => matchesFilter(card, filter, view.config)) };
 }
 
-function findLoaded(items: LoadedCard[], id: CardId): LoadedCard {
+/** The card file of an id among the files read; refused when no card has it, or two do. Internal: exported for the dispatcher. */
+export function findLoaded(items: LoadedCard[], id: CardId): LoadedCard {
   const wanted = String(id);
   const found = items.filter((item) => item.card && String(item.card.id) === wanted);
   if (found.length > 1) {
@@ -325,7 +335,8 @@ export function relationsOf(cards: CardData[], id: CardId): Array<{ kind: string
 // ---------------------------------------------------------------------------------------------
 // Rules
 
-function requireParticipant(config: BoardConfig, id: string): Participant {
+/** The participant of an id; refused, in words, when the board has none. Internal: exported for the dispatcher. */
+export function requireParticipant(config: BoardConfig, id: string): Participant {
   const participant = participantOf(config, id);
   if (!participant) {
     throw new BoardRefusal("participant", `Refused: "${id}" is not a participant of the board (${config.participants.map((entry) => entry.id).join(", ")}); add it to board.json's participants first. Nothing was written.`);
@@ -568,14 +579,51 @@ function replaceCardFile(ctx: BoardContext, loaded: LoadedCard, text: string): v
   writeFileAtomic(file, text);
 }
 
-interface Change {
+/** One change of a card: the card as it will be, the comment to append, the events that say it. */
+export interface Change {
   next?: CardData;
   comment?: Comment;
   events: BoardEvent[];
 }
 
-/** The one path every change of an existing card takes: the rules, the file, the events, the state. */
-function changeCard(
+/** A card file of the board that can be written: its card read, and no problem in it. */
+function writable(loaded: LoadedCard): Card {
+  if (loaded.problems.length > 0) {
+    throw new BoardRefusal("invalid", `Refused: ${loaded.file} has problems: ${loaded.problems.join("; ")}. Nothing was written; \`codelead board validate\` lists them.`);
+  }
+  return loaded.card!;
+}
+
+/**
+ * Writes one change of a card the caller read under the board's lock: the card's file (only the
+ * lines that changed, the comment appended), then its events (an event owed for a change made to the
+ * file without one first), then this machine's state of it. Internal: the core's own writes call it
+ * (`changeCard`, and the dispatcher, which writes several cards under one lock).
+ */
+export function writeCardChange(ctx: BoardContext, loaded: LoadedCard, at: string, result: Change): WriteResult {
+  const card = writable(loaded);
+  if (result.events.length === 0) return { card, events: [] };
+  // A change someone made to this card's file without an event is announced before this one.
+  const key = String(card.id);
+  const owed = unrecordedEvent(ctx, loaded, readCardStates(ctx.dir).cards[key], countByItem(readEvents(ctx.dir).events).get(key) ?? 0);
+  const next: CardData = { ...(result.next ?? card), updated: at };
+  let text = updateCardText(loaded.raw, card, next);
+  if (result.comment) text = appendCommentText(text, result.comment);
+  const reread = parseCardText(text);
+  if (!reread.card || reread.problems.length > 0) {
+    throw new BoardRefusal("invalid", `Refused: the card would not read back after the change: ${reread.problems.join("; ")}. Nothing was written.`);
+  }
+  replaceCardFile(ctx, loaded, text);
+  appendEvents(ctx.dir, owed ? [owed, ...result.events] : result.events);
+  noteCards(ctx, [{ id: card.id, file: loaded.file, raw: text, data: reread.card }]);
+  return { card: { ...reread.card, file: loaded.file, hash: digest(text) }, events: result.events };
+}
+
+/**
+ * The one path every change of an existing card takes: the rules, the file, the events, the state.
+ * Internal: exported for the dispatcher's renewal and release (dispatch.ts).
+ */
+export function changeCard(
   ctx: BoardContext,
   id: CardId,
   as: string,
@@ -587,29 +635,11 @@ function changeCard(
     const participant = requireParticipant(config, as);
     const items = readItems(ctx);
     const loaded = findLoaded(items, id);
-    if (loaded.problems.length > 0) {
-      throw new BoardRefusal("invalid", `Refused: ${loaded.file} has problems: ${loaded.problems.join("; ")}. Nothing was written; \`codelead board validate\` lists them.`);
-    }
-    const card = loaded.card!;
+    const card = writable(loaded);
     requireFresh(card, expectUpdated);
     const at = isoSeconds(ctx.now());
     const result = change(card, config, participant, at, items.flatMap((item) => (item.card ? [item.card] : [])));
-    if (result.events.length === 0) return { card, events: [] };
-
-    // A change someone made to this card's file without an event is announced before this one.
-    const key = String(card.id);
-    const owed = unrecordedEvent(ctx, loaded, readCardStates(ctx.dir).cards[key], countByItem(readEvents(ctx.dir).events).get(key) ?? 0);
-    const next: CardData = { ...(result.next ?? card), updated: at };
-    let text = updateCardText(loaded.raw, card, next);
-    if (result.comment) text = appendCommentText(text, result.comment);
-    const reread = parseCardText(text);
-    if (!reread.card || reread.problems.length > 0) {
-      throw new BoardRefusal("invalid", `Refused: the card would not read back after the change: ${reread.problems.join("; ")}. Nothing was written.`);
-    }
-    replaceCardFile(ctx, loaded, text);
-    appendEvents(ctx.dir, owed ? [owed, ...result.events] : result.events);
-    noteCards(ctx, [{ id: card.id, file: loaded.file, raw: text, data: reread.card }]);
-    return { card: { ...reread.card, file: loaded.file, hash: digest(text) }, events: result.events };
+    return writeCardChange(ctx, loaded, at, result);
   });
 }
 
@@ -870,8 +900,11 @@ export function addComment(ctx: BoardContext, id: CardId, input: { as: string; b
 
 /**
  * Moves a card into a column (an agent: only into its columns). Into Ready, a card goes only when it
- * can be worked alone (`requireReady`); out of Ready, an agent takes a card meant for it into In
- * progress and nowhere else (`requireMayLeaveReady`). With `comment`, the comment is
+ * can be worked alone (`requireReady`); out of Ready, only the person moves a card
+ * (`requireMayLeaveReady`: an agent asks the board for its card, `takeCard`). A claimed card is moved
+ * by its holder only to For review, by no other agent, by the person anywhere
+ * (`requireMayMoveClaimed`); leaving In progress ends its claim, with a `claim.ended` event after the
+ * move's. With `comment`, the comment is
  * written first, both events carry the same time, and each names the other (`data.withMove` on the
  * comment, `data.withComment` on the move: "comment and move", one line wherever events are listed).
  * A card already in the
@@ -900,17 +933,19 @@ export function moveCard(
   return changeCard(ctx, id, input.as, input.expectUpdated, (card, config, participant, at, cards) => {
     const column = requireColumn(config, input.to);
     requireMayEnter(config, participant, column, "move a card into");
-    // Ready (ready.ts): an agent takes a card out of it into In progress only; a card goes into it only when it can be worked alone.
+    // Ready (ready.ts): an agent moves no card out of it (the board gives it one: take); a card goes into it only when it can be worked alone.
     const ready = readyColumnOf(config);
     if (ready !== undefined && card.column === ready.id && column.id !== ready.id) requireMayLeaveReady(config, participant, card, ready, column);
     if (ready !== undefined && column.id === ready.id && card.column !== ready.id) requireReady(card, ready);
+    // A claimed card (claim.ts): its holder hands it to For review; no other agent moves it; the person moves it anywhere.
+    const held = claimOn(card);
+    if (held !== undefined) requireMayMoveClaimed(participant, card, held, card.column, column, columnOf(config, REVIEW_COLUMN_ID));
     const events: BoardEvent[] = [];
     let comment: Comment | undefined;
     if (input.comment !== undefined) {
-      const rewritten: string[] = [];
-      const body = checkedComment(pathWriting(ctx, config, input.rewriteHomePaths), input.comment, rewritten);
-      comment = { author: input.as, at, body };
-      events.push({ at, by: input.as, item: card.id, kind: "comment.added", data: { ...commentData(body, config), ...rewrittenData(rewritten), withMove: true } });
+      const written = commentWithMove(ctx, config, input.as, card.id, at, input.comment, input.rewriteHomePaths);
+      comment = written.comment;
+      events.push(written.event);
     }
     const anchor =
       input.after === undefined || input.after === null
@@ -929,8 +964,33 @@ export function moveCard(
         events.push({ at, by: input.as, item: card.id, kind: "item.updated", data: { fields: ["fields"], landed: landing } });
       }
     }
-    return { next: { ...card, column: column.id, fields }, ...(comment ? { comment } : {}), events };
+    const next: CardData = { ...card, column: column.id, fields };
+    // A claim lives in In progress: the card leaving it (handed to For review, or moved by the person) ends it, with its event.
+    if (card.claim !== undefined && column.id !== card.column) {
+      delete next.claim;
+      events.push(claimEnded(card, card.claim, input.as, at, { to: column.id }));
+    }
+    return { next, ...(comment ? { comment } : {}), events };
   });
+}
+
+/** The column a holder hands its card to when the work is done (the claim ends there). */
+const REVIEW_COLUMN_ID = "for-review";
+
+/** The event of a claim that ended (`claim.ended`): whose it was, until when, and why (the column the card went to, or its archive). */
+function claimEnded(card: Pick<CardData, "id">, claim: Claim, by: string, at: string, why: { to: string } | { archived: true }): BoardEvent {
+  return { at, by, item: card.id, kind: "claim.ended", data: { holder: claim.by, until: claim.until, ...why } };
+}
+
+/**
+ * A comment written in one step with a move (a move's `comment`, a release's reason): the comment as
+ * the card keeps it (its paths cited, refused when it is empty or unsafe), and its `comment.added`
+ * event, marked as written with the move (`data.withMove`). Internal: exported for the dispatcher.
+ */
+export function commentWithMove(ctx: BoardContext, config: BoardConfig, as: string, item: CardId, at: string, text: string, rewriteHomePaths?: boolean): { comment: Comment; event: BoardEvent } {
+  const rewritten: string[] = [];
+  const body = checkedComment(pathWriting(ctx, config, rewriteHomePaths), text, rewritten);
+  return { comment: { author: as, at, body }, event: { at, by: as, item, kind: "comment.added", data: { ...commentData(body, config), ...rewrittenData(rewritten), withMove: true } } };
 }
 
 /** The words after `Landed:` on a comment's first line, or undefined when the comment does not start so. */
@@ -969,7 +1029,9 @@ export interface CardChanges {
  * as `ask`, the colour as `color`, the type's other fields as `fields`). When the decision
  * (`fields.decided`) is set, changed or removed, that event also carries it as `data.decided`
  * (`{ option, by, on }`, or null once removed): the person's answer, which the check says apart.
- * Only a person gives a decision or takes one away: an agent's write that would is refused.
+ * Only a person gives a decision or takes one away: an agent's write that would is refused. On a card
+ * in Ready or a claimed card, an agent adds or removes no `for:` tag and changes none of the Ready
+ * fields (claim.ts, ready.ts).
  *
  * The title, the description, the status, each tag and each attachment's path have their paths of
  * this machine cited first (the repository's as the path in it, the workspace's as
@@ -987,6 +1049,13 @@ export function updateCard(ctx: BoardContext, id: CardId, input: { as: string; c
     // The colour is the person's mark, and the queue for CodeLead the person's to fill.
     if (changes.color !== undefined) refuseAgentColor(participant);
     refuseAgentQueueTag(participant, changes.addTags ?? []);
+    // Which agent a card in Ready, or a claimed card, is for is the person's to say (claim.ts).
+    const readyColumn = readyColumnOf(config);
+    const held = claimOn(card);
+    refuseAgentForTags(participant, card, [...(changes.addTags ?? []), ...(changes.removeTags ?? [])], {
+      ...(readyColumn !== undefined && card.column === readyColumn.id ? { ready: readyColumn } : {}),
+      ...(held !== undefined ? { claim: held } : {})
+    });
     const names = readPrivateNames(ctx.dir);
     const writing = pathWriting(ctx, config, input.rewriteHomePaths);
     const scope = writing.scope;
@@ -1105,12 +1174,14 @@ export function updateCard(ctx: BoardContext, id: CardId, input: { as: string; c
         changed.add(key === ASK_FIELD ? "ask" : "fields");
       }
       if (changed.size > 0) {
-        // A card in Ready keeps what it says it may do: the person's ask, which no agent changes and no change takes away.
-        const ready = readyColumnOf(config);
-        if (ready !== undefined && card.column === ready.id) {
-          refuseAgentReadyFields(participant, ready, READY_FIELDS.filter((name) => !sameValue(card.fields[name], next.fields[name])));
-          requireStillReady(card, next.fields, ready);
+        // A card in Ready keeps what it says it may do: the person's ask, which no agent changes and no change takes away;
+        // and so does a claimed card, for every agent, the one that holds it too.
+        const changedReady = READY_FIELDS.filter((name) => !sameValue(card.fields[name], next.fields[name]));
+        if (readyColumn !== undefined && card.column === readyColumn.id) {
+          refuseAgentReadyFields(participant, readyColumn, changedReady);
+          requireStillReady(card, next.fields, readyColumn);
         }
+        if (held !== undefined) refuseAgentClaimedFields(participant, card, held, changedReady);
         refuseUnsafeCard(scope, { ...next, thread: [] }, names);
         for (const name of ["ask", "fields"]) if (changed.has(name)) updated.push(name);
       }
@@ -1127,12 +1198,19 @@ export function updateCard(ctx: BoardContext, id: CardId, input: { as: string; c
   });
 }
 
-/** Archives a card: it leaves the board and stays in its file, searchable. Only a person archives. */
+/** Archives a card: it leaves the board and stays in its file, searchable; a claim it carried ends. Only a person archives. */
 export function archiveCard(ctx: BoardContext, id: CardId, input: { as: string; expectUpdated?: string }): WriteResult {
   return changeCard(ctx, id, input.as, input.expectUpdated, (card, _config, participant, at) => {
     if (participant.kind !== "person") throw new BoardRefusal("not-allowed", `Refused: ${participant.id} is an agent; only a person archives a card. Nothing was written.`);
     if (card.archived !== undefined) return { events: [] };
-    return { next: { ...card, archived: at }, events: [{ at, by: input.as, item: card.id, kind: "item.archived", data: { column: card.column } }] };
+    const next: CardData = { ...card, archived: at };
+    const events: BoardEvent[] = [{ at, by: input.as, item: card.id, kind: "item.archived", data: { column: card.column } }];
+    // A card archived while it is claimed: the claim ends with it.
+    if (card.claim !== undefined) {
+      delete next.claim;
+      events.push(claimEnded(card, card.claim, input.as, at, { archived: true }));
+    }
+    return { next, events };
   });
 }
 
@@ -1498,6 +1576,8 @@ export interface Problem {
 
 export interface ValidationResult {
   problems: Problem[];
+  /** What is worth knowing and is no problem, when there is any: a claim whose time passed, which the next take ends. */
+  notes?: Problem[];
   cards: number;
   events: number;
   cursors: number;
@@ -1532,6 +1612,8 @@ export function cardProblemsOnBoard(card: Card, config: BoardConfig, ids: Set<st
   // A card in Ready (put there by hand, or changed by hand since) that an agent could not work alone.
   const ready = readyColumnOf(config);
   if (ready !== undefined && card.column === ready.id && card.archived === undefined) for (const gap of readyGaps(card.fields)) problems.push(`the card is in ${ready.name}, and ${gap.words}`);
+  // A claim (claim.ts) lives on a card in In progress, and is an agent's of the board.
+  problems.push(...claimFindings(card, config).problems);
   if (card.id !== "" && !fileNameFitsId(path.posix.basename(card.file), card.id)) {
     problems.push(`the file's name does not begin with the card's id (${cardFileName(card.id, "…")})`);
   }
@@ -1544,6 +1626,8 @@ export function validateBoard(ctx: BoardContext): ValidationResult {
   if (!("config" in inspected)) {
     return { problems: inspected.problems.map((message) => ({ file: "board.json", message })), cards: 0, events: 0, cursors: 0 };
   }
+  const notes: Problem[] = [];
+  const now = ctx.now().getTime();
   const { config } = inspected;
   if (!fs.existsSync(path.join(ctx.dir, "AGENTS.md"))) problems.push({ file: "AGENTS.md", message: "there is no AGENTS.md, so an agent has no conventions to read (`codelead board init` writes one)" });
 
@@ -1557,6 +1641,7 @@ export function validateBoard(ctx: BoardContext): ValidationResult {
     const key = String(item.card.id);
     owners.set(key, [...(owners.get(key) ?? []), item.file]);
     for (const message of cardProblemsOnBoard(item.card, config, ids)) problems.push({ file: item.file, message });
+    for (const message of claimFindings(item.card, config, now).notes) notes.push({ file: item.file, message });
     for (const [what, text] of cardTexts(item.card)) {
       const found = findUnsafe(scopeOf(ctx, config), text, names);
       if (found === "secret") problems.push({ file: item.file, message: `${what} looks like it holds a secret` });
@@ -1612,5 +1697,5 @@ export function validateBoard(ctx: BoardContext): ValidationResult {
   } catch {
     // No cursors folder: nobody has checked yet on this machine.
   }
-  return { problems, cards: items.length, events: count, cursors };
+  return { problems, ...(notes.length > 0 ? { notes } : {}), cards: items.length, events: count, cursors };
 }

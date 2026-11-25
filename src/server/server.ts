@@ -8,6 +8,7 @@ import {
   bulkWrite,
   checkBoard,
   createCards,
+  dispatchView,
   isBoardRefusal,
   isIsoTime,
   markOpened,
@@ -17,6 +18,9 @@ import {
   readEvents,
   readPreferences,
   refusalReason,
+  releaseCard,
+  renewClaim,
+  takeCard,
   updateCard,
   workspaceOf,
   writePreferences,
@@ -40,6 +44,11 @@ import { boardPayload, cardDetail, eventItem, notificationsPayload, personOf, su
  * The board's local process: Node's own HTTP server on 127.0.0.1, the page's files, a JSON API
  * whose every route hands its work to the core (as the board's person: the page is the person),
  * and the event stream. It never calls a model and never runs code; the folder is its only state.
+ *
+ * The dispatcher's routes are for a host that runs agents (a desktop app's panel and its loop): what
+ * each agent holds and would be given next (`GET /api/dispatch`), an agent's take (`POST /api/take`,
+ * `{ as }`), and the holder's renewal and release of a card (`POST /api/items/:id/renew`, `/release`);
+ * they write as the agent named, through the same core. Nothing here starts an agent.
  *
  * A refusal of the core becomes 409 when the card changed since the page read it (`stale`), 404
  * when there is no such card, 503 when another writer holds the board, and 422 for every other
@@ -332,6 +341,14 @@ function batchOf(body: Body, person: string): { as: string; operation: BulkOpera
   return { as, operation, ids, expectUpdated };
 }
 
+/** A take's or a renewal's `lease`: minutes above 0, or none (the board's lease). */
+function leaseOf(body: Body): number | undefined {
+  const value = body.lease;
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) throw usage(`Refused: lease is a number of minutes above 0; ${JSON.stringify(value)} is not one. Nothing was written.`);
+  return value;
+}
+
 /** The Ready check's `missing`, from a refusal's details, as the page reads it; nothing when the refusal has none. */
 function missingOf(details: Record<string, unknown> | undefined): { missing?: ReadyGapInfo[] } {
   const missing = details?.missing;
@@ -475,6 +492,33 @@ export function createBoardServer(options: BoardServerOptions): BoardServer {
         const payload: BatchPayload = { operation: body.operation as BatchOperationName, results: lines, changed: count("changed"), unchanged: count("unchanged"), refused: count("refused") };
         return { status: 200, body: payload };
       }
+    },
+    // The dispatcher (core/dispatch.ts), for a host that runs agents: one place decides which agent gets which Ready card.
+    { method: "GET", pattern: /^\/api\/dispatch$/, run: () => ({ status: 200, body: dispatchView(ctx) }) },
+    {
+      method: "POST",
+      pattern: /^\/api\/take$/,
+      run: (_match, _url, body) => {
+        const lease = leaseOf(body);
+        const result = takeCard(ctx, { as: requiredText(body, "as", "agent that asks (as)"), ...(lease !== undefined ? { leaseMinutes: lease } : {}) });
+        if (result.given || result.swept.length > 0) stream.scan();
+        return { status: 200, body: result };
+      }
+    },
+    {
+      method: "POST",
+      pattern: /^\/api\/items\/([^/]+)\/renew$/,
+      run: (match, _url, body) => {
+        const lease = leaseOf(body);
+        const result = renewClaim(ctx, cardIdOf(match[1]!), { as: requiredText(body, "as", "agent that holds the card (as)"), ...(lease !== undefined ? { leaseMinutes: lease } : {}) });
+        return written(result);
+      }
+    },
+    {
+      method: "POST",
+      pattern: /^\/api\/items\/([^/]+)\/release$/,
+      run: (match, _url, body) =>
+        written(releaseCard(ctx, cardIdOf(match[1]!), { as: requiredText(body, "as", "agent that holds the card (as)"), reason: requiredText(body, "reason", "reason the card goes back (reason)") }))
     },
     {
       method: "GET",

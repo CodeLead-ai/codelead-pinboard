@@ -12,9 +12,12 @@ import {
   runBoardInit,
   runBoardMove,
   runBoardNew,
+  runBoardRelease,
+  runBoardRenew,
   runBoardReply,
   runBoardSet,
   runBoardShow,
+  runBoardTake,
   runBoardValidate,
   type BoardCliDependencies
 } from "../cli/board.js";
@@ -533,10 +536,51 @@ describe("the README's section on Ready, run as written", () => {
 
     expect(await runBoardMove("3", { as: "claude", to: "ready" }, term.deps)).toBe(1);
     expect(term.said()).toBe(printed("pinboard move 3 --to ready --as claude"));
-    expect(await runBoardMove("3", { as: "claude", to: "backlog" }, term.deps)).toBe(1);
-    expect(term.said()).toBe(printed("pinboard move 3 --to backlog --as claude"));
-    expect(await runBoardMove("3", { as: "claude", to: "in-progress" }, term.deps)).toBe(0);
+    expect(await runBoardMove("3", { as: "claude", to: "in-progress" }, term.deps)).toBe(1);
     expect(term.said()).toBe(printed("pinboard move 3 --to in-progress --as claude").replace(/\n```[\s\S]*$/, ""));
+  });
+
+  it("shows how an agent gets its card, works it, renews it and hands it back, as the commands say it", async () => {
+    const term = await terminal();
+    const deps = { ...term.deps, command: "pinboard" };
+    const done = "Five failed sign-ins in a minute lock the form for ten minutes; npm test passes.";
+    // The card of the README's run: #3, made by the agent, set and put in Ready by the person.
+    await runBoardNew({ as: "robin", type: "task", title: "Add a sign-in page" }, deps);
+    await runBoardNew({ as: "robin", type: "decision", title: "Pick the session store" }, deps);
+    await runBoardNew({ as: "claude", type: "task", title: "Rate-limit the sign-in form", column: "backlog", tag: ["area:auth"] }, deps);
+    await runBoardSet("3", { as: "robin", field: [`definitionOfDone=${done}`, 'mayTouch=["src/auth/", "test/auth.test.ts"]', "limitMinutes=30"] }, deps);
+    await runBoardMove("3", { as: "robin", to: "ready" }, deps);
+    term.said();
+    expect(README).toContain("#### How an agent gets its card: take");
+
+    expect(await runBoardTake({ as: "claude" }, deps)).toBe(0);
+    expect(term.said()).toBe(printed("pinboard take --as claude").replace(/\n```[\s\S]*$/, ""));
+    const file = fs.readFileSync(path.join(term.dir, "items", term.files().find((name) => name.startsWith("0003-"))!), "utf8");
+    const claim = /\nclaim:\n(?: {2}.*\n)+/.exec(file)![0].trimStart();
+    expect(README).toContain(`\`\`\`yaml\n${claim}\`\`\``);
+
+    for (let minute = 0; minute < 10; minute += 1) term.tick();
+    expect(await runBoardRenew("3", { as: "claude" }, deps)).toBe(0);
+    expect(term.said()).toBe(printed("pinboard renew 3 --as claude"));
+    expect(await runBoardTake({ as: "claude" }, deps)).toBe(0);
+    // The README shows the take twice: the second time, the answer of an agent that holds its card.
+    const second = README.indexOf("$ pinboard take --as claude\n", README.indexOf("$ pinboard take --as claude\n") + 1);
+    expect(README.slice(second).split("\n")[1]).toBe(term.said());
+    const landed = "Landed: 9b1e7d2 on main; src/auth/limit.ts, test/auth.test.ts (4 tests).";
+    expect(await runBoardMove("3", { as: "claude", to: "for-review", comment: landed }, deps)).toBe(0);
+    expect(term.said()).toBe(printed(`pinboard move 3 --to for-review --as claude --comment "${landed}"`).replace(/\n```[\s\S]*$/, ""));
+    expect(getCard(term.ctx, 3).card.claim).toBeUndefined();
+
+    // Instead of the move: the card given back, with the reason.
+    await runBoardMove("3", { as: "robin", to: "ready" }, deps);
+    await runBoardTake({ as: "claude" }, deps);
+    term.said();
+    const reason = "The tests need a database this machine does not have.";
+    expect(await runBoardRelease("3", { as: "claude", reason }, deps)).toBe(0);
+    expect(term.said()).toBe(printed(`pinboard release 3 --as claude --reason "${reason}"`).replace(/\n```[\s\S]*$/, ""));
+    expect(getCard(term.ctx, 3).card.thread.at(-1)?.body).toBe(reason);
+    // The table of the commands lists the three.
+    for (const row of ["| `take --as <agent>` |", "| `renew <id> --as <agent>` |", "| `release <id> --as <agent> --reason <text>` |"]) expect(README).toContain(row);
   });
 
   it("gives the one command for a board made before Ready, with its words", async () => {

@@ -1,4 +1,5 @@
 import { agentColumns, intervalMinutes } from "./boardConfig.js";
+import { dispatchOf } from "./claim.js";
 import { PRIVATE_NAMES_FILE } from "./guard.js";
 import { DONE_WHEN_FIELD, LIMIT_MINUTES_FIELD, LIMIT_MONEY_FIELD, MAY_TOUCH_FIELD, READY_COLUMN_ID, READY_TAKEN_INTO, readyColumnOf } from "./ready.js";
 import { EVENT_KINDS, type BoardConfig } from "./types.js";
@@ -47,7 +48,7 @@ checks below, when CodeLead is installed (\`codelead board --help\`).
   line \`### <participant> · <UTC time>\` followed by its markdown.
 - \`events.jsonl\`: one JSON line per change, appended, never edited:
   \`{"at":"2026-10-03T00:52:10Z","by":"<you>","item":42,"kind":"comment.added","data":{"excerpt":"…"}}\`
-  Kinds: ${EVENT_KINDS.join(", ")}.
+  Kinds: ${EVENT_KINDS.filter((kind) => ready !== undefined || !kind.startsWith("claim.")).join(", ")}.
 - \`cursors/<you>.json\`: what you have seen (not in git): \`seen\`, the time of your last \`--ack\`;
   \`lines\`, how many lines of events.jsonl you have read; \`opened\`, when you opened each card:
   \`{ "seen": "<time>", "lines": 17, "opened": { "42": "<time>" } }\`.
@@ -91,15 +92,18 @@ ${codeleadSection(config)}`);
 
 /**
  * The section of AGENTS.md on Ready, for a board that has the column (empty otherwise): what the
- * column means, what a card there says, how an agent takes one, and that an agent never moves a
- * card into it. `add-ready` prints it for a guide it leaves as it is.
+ * column means, what a card there says, that the board gives an agent its card (take, with a claim it
+ * renews and that runs out), one real exchange, and what an agent never does there. `add-ready` prints
+ * it for a guide it leaves as it is.
  */
 export function readySection(config: BoardConfig): string {
   const ready = readyColumnOf(config);
   if (!ready) return "";
   const into = config.columns.find((column) => column.id === READY_TAKEN_INTO)?.name;
+  const review = config.columns.find((column) => column.id === "for-review")?.name ?? "the review column";
+  const minutes = dispatchOf(config).leaseMinutes;
   const take = into
-    ? `Take a card from ${ready.name} by moving it to ${into} before you start; a card tagged \`for:<agent>\` is that agent's alone. Never move a card into ${ready.name}, out of it anywhere but ${into}, or change those fields while it is there: the commands refuse it.`
+    ? `You do not pick the card; the board gives it: \`codelead board take --as <you>\` gives you the next one you may work (yours, tagged \`for:<you>\`, first) in ${into}, held for you by a claim for ${minutes} minutes, or says why there is none. Renew the claim while you work (\`renew <id> --as <you>\`), and hand the card to ${review} when it is done; \`release <id> --as <you> --reason "…"\` gives it back. A claim not renewed runs out, and the next take puts the card back in ${ready.name}. For example: \`take --as claude\` says "Took #3 (task): Rate-limit the sign-in form" and until when claude holds it; claude works, runs \`renew 3 --as claude\` every few minutes, then \`move 3 --to for-review --as claude --comment "Landed: 4f2a9c1"\`. Never move a card into ${ready.name} or out of it, or change those fields or a \`for:\` tag while it is there or held: the commands refuse it.`
     : `Leave its cards where they are: the board has no column to take them into. Never move a card into ${ready.name}, or change those fields while it is there: the commands refuse it.`;
   return wrapLong(`## ${ready.name}
 ${ready.name} is the person's column of the cards an agent may pick up by itself: moving a card there is the person's ask for the work. A card there says how to tell it is done (\`fields.${DONE_WHEN_FIELD}\`), what it may touch (\`fields.${MAY_TOUCH_FIELD}\`) and its limit (\`fields.${LIMIT_MINUTES_FIELD}\`, \`fields.${LIMIT_MONEY_FIELD}\`): keep to them. ${take}

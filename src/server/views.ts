@@ -18,6 +18,7 @@ import {
   readBoard,
   readDecision,
   readEvents,
+  readyWaits,
   relationsOf,
   RELATION_KINDS,
   TYPE_FIELDS,
@@ -30,9 +31,10 @@ import {
   type CheckResult,
   type Participant,
   type ReadEvent,
+  type Wait,
   type YamlValue
 } from "../core/index.js";
-import type { BoardPayload, CardDetail, CardSummary, EditorInfo, EventItem, NotificationGroup, NotificationsPayload, ParticipantInfo, ReadyInfo } from "./contract.js";
+import type { BoardPayload, CardDetail, CardSummary, EditorInfo, EventItem, NotificationGroup, NotificationsPayload, ParticipantInfo, ReadyInfo, WaitInfo } from "./contract.js";
 import { attachmentLine, mentionsIn } from "./editor.js";
 
 /**
@@ -101,10 +103,11 @@ function askOf(card: Card): string | undefined {
 
 /**
  * A card's tile: its words, its last comment, the three marks of spec 6.1 and 6.4, its colour, a
- * decision's ask and what was decided, and its place in its column (`rank`, from `cardRanks` over
- * the whole log; 0 when not given).
+ * decision's ask and what was decided, its place in its column (`rank`, from `cardRanks` over
+ * the whole log; 0 when not given), its claim, and, for a card in Ready, what keeps it from being
+ * given now (`wait`, from the dispatcher's `readyWaits`).
  */
-export function summarize(card: Card, config: BoardConfig, person: Participant, events: ReadEvent[], rank = 0): CardSummary {
+export function summarize(card: Card, config: BoardConfig, person: Participant, events: ReadEvent[], rank = 0, wait?: Wait): CardSummary {
   const kinds = new Map(config.participants.map((participant) => [participant.id, participant.kind]));
   const isAgent = (id: string): boolean => kinds.get(id) === "agent";
   const isPerson = (id: string): boolean => kinds.get(id) === "person";
@@ -147,10 +150,24 @@ export function summarize(card: Card, config: BoardConfig, person: Participant, 
     waitsOnYou: last !== undefined && last.author !== person.id,
     proposal: proposed && !touched,
     ...(working ? { working } : {}),
+    ...(card.claim ? { claim: { by: card.claim.by, since: card.claim.since, until: card.claim.until } } : {}),
+    ...(wait ? { wait: waitInfo(wait) } : {}),
     relations: card.relations.length,
     attachments: card.attachments.length,
     file: card.file,
     hash: card.hash
+  };
+}
+
+/** A card's wait as the page reads it. */
+function waitInfo(wait: Wait): WaitInfo {
+  return {
+    why: wait.why,
+    line: wait.line,
+    words: wait.words,
+    ...(wait.cards ? { cards: wait.cards } : {}),
+    ...(wait.agents ? { agents: wait.agents } : {}),
+    ...(wait.until ? { until: wait.until } : {})
   };
 }
 
@@ -161,7 +178,7 @@ export function summaryOf(ctx: BoardContext, id: CardId): CardSummary {
   const person = personOf(view.config);
   const { events } = readEvents(ctx.dir);
   const mine = events.filter(({ event }) => event.item !== undefined && String(event.item) === String(card.id));
-  return summarize(card, view.config, person, mine, cardRanks(events, view.cards).get(String(card.id)) ?? 0);
+  return summarize(card, view.config, person, mine, cardRanks(events, view.cards).get(String(card.id)) ?? 0, readyWaits(ctx).get(String(card.id)));
 }
 
 /** Several cards' tiles, read once from the files as they are now (a card no longer readable is left out). */
@@ -172,10 +189,11 @@ export function summariesOf(ctx: BoardContext, ids: CardId[]): Map<string, CardS
   const { events } = readEvents(ctx.dir);
   const byCard = eventsByCard(events);
   const ranks = cardRanks(events, view.cards);
+  const waits = readyWaits(ctx);
   const out = new Map<string, CardSummary>();
   for (const card of view.cards) {
     const key = String(card.id);
-    if (wanted.has(key)) out.set(key, summarize(card, view.config, person, byCard.get(key) ?? [], ranks.get(key) ?? 0));
+    if (wanted.has(key)) out.set(key, summarize(card, view.config, person, byCard.get(key) ?? [], ranks.get(key) ?? 0, waits.get(key)));
   }
   return out;
 }
@@ -201,6 +219,7 @@ export function boardPayload(ctx: BoardContext, editor: EditorInfo, command = DE
   const { events, count } = readEvents(ctx.dir);
   const byCard = eventsByCard(events);
   const ranks = cardRanks(events, view.cards);
+  const waits = readyWaits(ctx);
   const agentMay = new Set(agentColumns(config).map((column) => column.id));
   return {
     name: config.name,
@@ -218,7 +237,7 @@ export function boardPayload(ctx: BoardContext, editor: EditorInfo, command = DE
     colors: CARD_COLORS.map((color) => ({ hex: color.hex, name: color.name })),
     relationKinds: [...RELATION_KINDS],
     tagNamespaces: [...(config.tagNamespaces ?? [])],
-    cards: view.cards.map((card) => summarize(card, config, person, byCard.get(String(card.id)) ?? [], ranks.get(String(card.id)) ?? 0)),
+    cards: view.cards.map((card) => summarize(card, config, person, byCard.get(String(card.id)) ?? [], ranks.get(String(card.id)) ?? 0, waits.get(String(card.id)))),
     unreadable: view.unreadable,
     lines: count,
     editor,
@@ -276,6 +295,7 @@ export function cardDetail(ctx: BoardContext, editor: EditorInfo, id: CardId): C
       ...(card.status !== undefined ? { status: card.status } : {}),
       ...(card.archived !== undefined ? { archived: card.archived } : {}),
       ...(card.color !== undefined ? { color: card.color } : {}),
+      ...(card.claim !== undefined ? { claim: { by: card.claim.by, since: card.claim.since, until: card.claim.until } } : {}),
       extra: card.extra,
       description: card.description,
       thread: card.thread.map((comment) => ({ author: comment.author, at: comment.at, body: comment.body })),

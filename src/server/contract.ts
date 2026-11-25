@@ -63,10 +63,33 @@ export interface CardSummary {
   proposal: boolean;
   /** An agent wrote on it since it entered In progress: the agent reported working on it. */
   working?: { by: string; at: string };
+  /** The agent the board gave it to from Ready, and until when it holds it (the tile counts down to `until`). */
+  claim?: ClaimInfo;
+  /** A card in Ready that would not be given now: why, in one short line ("waits on #12"), until `until` when it ends by itself. */
+  wait?: WaitInfo;
   relations: number;
   attachments: number;
   file: string;
   hash: string;
+}
+
+/** A card's claim (core/claim.ts): the agent that holds it, since when, until when (UTC). */
+export interface ClaimInfo {
+  by: string;
+  since: string;
+  until: string;
+}
+
+/** Why a card in Ready would not be given now (core/dispatch.ts). */
+export interface WaitInfo {
+  why: "not-ready" | "blocked" | "in-use" | "for-others" | "limit";
+  /** One short line: "waits on #12", "its files are in use by #7", "for Codex". */
+  line: string;
+  words: string;
+  cards?: CardId[];
+  agents?: string[];
+  /** When the reason ends by itself (the claims it rests on run out): past it, the line no longer holds. */
+  until?: string;
 }
 
 /** A colour a card may carry (the "Matte Rainbow" palette). */
@@ -199,6 +222,7 @@ export interface CardDetail {
     status?: string;
     archived?: string;
     color?: string;
+    claim?: ClaimInfo;
     extra: Record<string, unknown>;
     description: string;
     thread: Array<{ author: string; at: string; body: string }>;
@@ -339,6 +363,24 @@ export interface PreferencesPayload {
   stored: boolean;
   /** Why a file that is there could not be used. */
   problems?: string[];
+}
+
+/** POST /api/take: an agent asks the board for its card (`as`, an agent of the board), for the board's lease or `lease` minutes. */
+export interface TakeInput {
+  as: string;
+  lease?: number;
+}
+
+/** POST /api/items/:id/renew: the agent that holds the card extends its claim. */
+export interface RenewInput {
+  as: string;
+  lease?: number;
+}
+
+/** POST /api/items/:id/release: the agent that holds the card gives it back to Ready, with the reason. */
+export interface ReleaseInput {
+  as: string;
+  reason: string;
 }
 
 export type BatchOperationName = "move" | "archive" | "unarchive" | "tags" | "project";

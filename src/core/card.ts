@@ -1,6 +1,6 @@
 import { cardColorOf, colorWords } from "./marks.js";
 import { fencedLines, isIsoTime, joinText, splitText, trimBlankLines, type Eol } from "./text.js";
-import { ASK_FIELD, type Attachment, type CardData, type CardId, type Comment, type Relation } from "./types.js";
+import { ASK_FIELD, type Attachment, type CardData, type CardId, type Claim, type Comment, type Relation } from "./types.js";
 import {
   formatEntry,
   formatFlow,
@@ -24,7 +24,7 @@ import {
  * Writes are surgical: a changed key's lines are replaced and every other byte of the file stays
  * as it was (unknown keys, comments in the front matter, the line endings, a byte-order mark).
  */
-export const KNOWN_KEYS = ["id", "type", "title", "column", "tags", "color", "author", "created", "updated", "relations", "attachments", "fields", "session", "status", "archived"] as const;
+export const KNOWN_KEYS = ["id", "type", "title", "column", "tags", "color", "author", "created", "updated", "relations", "attachments", "fields", "session", "status", "archived", "claim"] as const;
 export type KnownKey = (typeof KNOWN_KEYS)[number];
 export const REQUIRED_KEYS: readonly KnownKey[] = ["id", "type", "title", "column", "author", "created", "updated"];
 
@@ -232,6 +232,13 @@ export function parseCardText(raw: string): { card?: CardData; problems: string[
   const status = optionalText("status");
   if (status !== undefined && /[\r\n]/.test(status)) problems.push('"status" must be one line');
   const archived = map.archived === undefined || map.archived === null ? undefined : time("archived");
+  // The claim of the agent the board gave the card to (dispatch.ts): who, since when, until when.
+  let claim: Claim | undefined;
+  if (map.claim !== undefined && map.claim !== null) {
+    const value = map.claim;
+    if (isMap(value) && typeof value.by === "string" && ID_TEXT.test(value.by) && isIsoTime(value.since) && isIsoTime(value.until)) claim = { by: value.by, since: value.since, until: value.until };
+    else problems.push(`"claim" must be { by: <agent>, since: <UTC time>, until: <UTC time> }, and is ${JSON.stringify(value)}`);
+  }
 
   const extra: YamlMap = {};
   for (const key of Object.keys(map)) {
@@ -259,6 +266,7 @@ export function parseCardText(raw: string): { card?: CardData; problems: string[
     ...(session !== undefined ? { session } : {}),
     ...(status !== undefined ? { status } : {}),
     ...(archived !== undefined ? { archived } : {}),
+    ...(claim !== undefined ? { claim } : {}),
     extra,
     description,
     thread: thread.comments
@@ -277,6 +285,8 @@ function knownValue(key: KnownKey, card: CardData): YamlValue | undefined {
       return card.attachments.map((attachment) => Object.fromEntries(Object.entries(attachment).filter(([, value]) => value !== undefined)) as YamlMap);
     case "fields":
       return card.fields;
+    case "claim":
+      return card.claim === undefined ? undefined : { by: card.claim.by, since: card.claim.since, until: card.claim.until };
     default:
       return card[key];
   }
@@ -311,6 +321,8 @@ function formatKnown(key: KnownKey, card: CardData, keepEmpty = false): string[]
       return card[key] === undefined ? undefined : [`${key}: ${JSON.stringify(card[key])}`];
     case "archived":
       return card.archived === undefined ? undefined : [`archived: ${formatScalar(card.archived)}`];
+    case "claim":
+      return card.claim === undefined ? undefined : formatEntry("claim", { by: card.claim.by, since: card.claim.since, until: card.claim.until });
     default:
       return [`${key}: ${formatScalar(card[key])}`];
   }

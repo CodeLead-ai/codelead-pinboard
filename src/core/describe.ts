@@ -61,9 +61,28 @@ export function describeEvent(event: BoardEvent, config?: BoardConfig): string {
       return `removed the tag ${String(data.tag)}`;
     case "attachment.added":
       return `attached ${String(data.path)}${data.lines ? `:${String(data.lines)}` : ""}`;
+    // A claim (dispatch.ts): the board gave the card to an agent from Ready, which holds it until a time it renews.
+    case "claim.taken":
+      return `was given it from ${column("ready")}: holds it until ${String(data.until)}${typeof data.minutes === "number" ? ` (${data.minutes} minutes)` : ""}`;
+    case "claim.renewed":
+      return `renewed its claim: holds it until ${String(data.until)}`;
+    case "claim.released":
+      return `gave it back to ${column("ready")}`;
+    case "claim.expired":
+      return `ended the claim of ${String(data.holder)}, which ran out at ${String(data.until)}: back to ${column("ready")}`;
+    case "claim.ended": {
+      const why = data.archived === true ? "archived" : `it moved to ${column(data.to)}`;
+      return data.holder === event.by ? `ended its claim (${why})` : `ended the claim of ${String(data.holder)} (${why})`;
+    }
     default:
       return event.kind;
   }
+}
+
+/** The claim event a move belongs to: the move of a take, a release or an ended lease (`data.withClaim`), then its claim event, by the same participant at the same time. */
+function claimOfMove<T extends BoardEvent>(move: T | undefined, next: T | undefined): T | undefined {
+  if (!move || !next || move.kind !== "item.moved" || move.data?.withClaim !== true || !next.kind.startsWith("claim.")) return undefined;
+  return String(move.item) === String(next.item) && move.at === next.at && move.by === next.by ? next : undefined;
 }
 
 /**
@@ -98,14 +117,24 @@ export function describeCommentAndMove(comment: BoardEvent, move: BoardEvent, co
 
 /**
  * Events as the lines a person reads, in the order given: each event its own line, except that a
- * comment and a move written in one step are one line.
+ * comment and a move written in one step are one line, and so are the move of a claim and its claim
+ * event ("was given it from Ready: holds it until …"), with the comment of a release ("gave it back
+ * to Ready: <the reason's first words>").
  */
 export function eventLines<T extends BoardEvent>(events: T[], config?: BoardConfig): Array<{ events: T[]; text: string }> {
   const lines: Array<{ events: T[]; text: string }> = [];
   for (let index = 0; index < events.length; index += 1) {
     const pair = commentAndMove(events[index]!, events[index + 1]);
-    if (pair) {
+    const claim = claimOfMove(pair?.move ?? events[index], pair ? events[index + 2] : events[index + 1]);
+    if (pair && claim) {
+      const said = (pair.comment.data as Record<string, unknown> | undefined)?.excerpt;
+      lines.push({ events: [events[index]!, events[index + 1]!, claim], text: `${describeEvent(claim, config)}${typeof said === "string" && said !== "" ? `: ${said}` : ""}` });
+      index += 2;
+    } else if (pair) {
       lines.push({ events: [events[index]!, events[index + 1]!], text: describeCommentAndMove(pair.comment, pair.move, config) });
+      index += 1;
+    } else if (claim) {
+      lines.push({ events: [events[index]!, claim], text: describeEvent(claim, config) });
       index += 1;
     } else lines.push({ events: [events[index]!], text: describeEvent(events[index]!, config) });
   }

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { dispatchProblems } from "./claim.js";
 import { BoardRefusal } from "./errors.js";
 import { writeFileAtomic } from "./files.js";
 import { formatJson } from "./json.js";
@@ -125,6 +126,7 @@ export function boardConfigProblems(value: unknown): string[] {
     problems.push('"nextId" must be a whole number of 1 or more');
   }
   if (config.imports !== undefined && !Array.isArray(config.imports)) problems.push('"imports" must be a list');
+  problems.push(...dispatchProblems(config.dispatch));
   // The workspace is a path relative to the repository: board.json is committed, and names no folder of this machine.
   if (config.workspace !== undefined) {
     if (typeof config.workspace !== "string" || config.workspace.trim() === "") problems.push('"workspace" must be a text: the folder of the repositories a card may cite, relative to the repository (".." for its parent)');

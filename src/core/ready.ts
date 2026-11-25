@@ -12,8 +12,9 @@ import type { YamlMap, YamlValue } from "./yaml.js";
  *   (`definitionOfDone`, the task's own field, which any card may carry for this), what it may touch
  *   (`mayTouch`: a repository, a folder or files, at least one) and a limit (`limitMinutes`,
  *   `limitMoney`, or both: a number each);
- * - from Ready an agent takes a card into In progress, and moves it nowhere else; a card tagged
- *   `for:<agent>` is that agent's, a card with no such tag any agent's;
+ * - an agent never moves a card out of Ready: it asks the board for its card (`take`, dispatch.ts),
+ *   and the board gives it the next one it may work, held for it in In progress by a claim; a card
+ *   tagged `for:<agent>` is that agent's, a card with no such tag any agent's;
  * - while a card is in Ready, what it says it may do is the person's ask: an agent does not change
  *   those fields, and no change may take one of them away.
  *
@@ -25,7 +26,7 @@ export const READY_COLUMN_ID = "ready";
 /** The column a new board has, and `addReadyColumn` adds. */
 export const READY_COLUMN: Readonly<BoardColumn> = { id: READY_COLUMN_ID, name: "Ready", owner: "person" };
 
-/** The column an agent takes a Ready card into. */
+/** The column the board gives an agent a Ready card into (In progress), where its claim lives. */
 export const READY_TAKEN_INTO = "in-progress";
 
 /** How anyone can tell the work is done: a sentence, a command, a test. A task's own field; any card may carry it for Ready. */
@@ -184,28 +185,20 @@ export function forAgents(tags: readonly string[]): string[] {
 }
 
 /**
- * An agent's move of a card out of Ready: into In progress only (that is how an agent takes it), and
- * only a card meant for it (no `for:<agent>` tag, or one that names it). A person's move out of
- * Ready is always allowed.
+ * An agent's move of a card out of Ready, into any column: refused. An agent does not pick its card:
+ * it asks the board (`take`, dispatch.ts), which gives it the card it may work next, with a claim,
+ * or says why there is none. The words name that command. A person's move out of Ready is always
+ * allowed.
  */
 export function requireMayLeaveReady(config: Pick<BoardConfig, "columns">, participant: Participant, card: Pick<CardData, "id" | "tags">, ready: Pick<BoardColumn, "name">, to: BoardColumn): void {
   if (participant.kind !== "agent") return;
   const into = config.columns.find((column) => column.id === READY_TAKEN_INTO);
-  if (to.id !== READY_TAKEN_INTO) {
-    throw new BoardRefusal(
-      "column",
-      into
-        ? `Refused: ${participant.id} is an agent and may move a card out of ${ready.name} only into ${into.name}, to take it; not into ${to.name}. Nothing was written.`
-        : `Refused: ${participant.id} is an agent and may not move a card out of ${ready.name}: the board has no column an agent takes it into. Nothing was written.`
-    );
-  }
-  const meant = forAgents(card.tags);
-  if (meant.length > 0 && !meant.includes(participant.id.toLowerCase())) {
-    throw new BoardRefusal(
-      "not-allowed",
-      `Refused: card #${String(card.id)} in ${ready.name} is for ${meant.join(" or ")} (${meant.map((id) => `for:${id}`).join(", ")}); ${participant.id} may not take it. Nothing was written.`
-    );
-  }
+  throw new BoardRefusal(
+    "column",
+    into
+      ? `Refused: ${participant.id} is an agent and does not move a card out of ${ready.name} (#${String(card.id)} into ${to.name}): an agent asks the board for its card with \`codelead board take --as ${participant.id}\`, which gives it the next card it may work, held for it in ${into.name}. Nothing was written.`
+      : `Refused: ${participant.id} is an agent and may not move a card out of ${ready.name}: the board has no column an agent takes it into. Nothing was written.`
+  );
 }
 
 /**

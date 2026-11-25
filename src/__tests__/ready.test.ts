@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { runBoardAddReady, runBoardList, runBoardMove, runBoardNew, runBoardSet, type BoardCliDependencies } from "../cli/board.js";
+import { runBoardAddReady, runBoardList, runBoardMove, runBoardNew, runBoardSet, runBoardTake, type BoardCliDependencies } from "../cli/board.js";
 import {
   addReadyColumn,
   agentsGuide,
@@ -22,6 +22,7 @@ import {
   readyGaps,
   readySection,
   refusalReason,
+  takeCard,
   updateCard,
   validateBoard,
   type BoardConfig,
@@ -34,8 +35,8 @@ import { createBoardServer, type BatchPayload, type BoardPayload, type RefusalPa
 /**
  * Ready: the person's column of the cards an agent may pick up by itself. Moving a card there is
  * the ask; a card goes there only when it says how to tell it is done, what it may touch and a limit;
- * an agent never moves a card into it, takes one out of it into In progress only, and does not change
- * what a card there says it may do. A board made before Ready keeps working, and `add-ready` gives it
+ * an agent never moves a card into it or out of it (the board gives an agent its card: take,
+ * dispatch.test.ts), and does not change what a card there says it may do. A board made before Ready keeps working, and `add-ready` gives it
  * the column.
  */
 
@@ -215,7 +216,7 @@ describe("the Ready check: a card goes to Ready only when it can be worked alone
 
 // ---------------------------------------------------------------------------------------------
 
-describe("Ready is the person's: only the person moves a card into it; an agent takes one out into In progress", () => {
+describe("Ready is the person's: only the person moves a card into it or out of it; an agent gets one from the board (take)", () => {
   it("refuses an agent's move into Ready with the rule of the person's columns, a card with the three things included", async () => {
     const b = await board();
     createCard(b.ctx, "robin", { type: "task", title: "One", column: "backlog", fields: ALL });
@@ -231,35 +232,38 @@ describe("Ready is the person's: only the person moves a card into it; an agent 
     expect(refusal(() => readBoardConfig(b.dir)).message).toContain('"agents.mayMoveTo" names "ready", a column only a person moves cards into');
   });
 
-  it("lets an agent take a card from Ready into In progress, and nowhere else", async () => {
+  it("refuses an agent's move of a card out of Ready, into In progress too, with the command that gives an agent its card", async () => {
     const b = await board();
     createCards(b.ctx, "robin", [
       { type: "task", title: "One", column: "ready", fields: ALL },
       { type: "task", title: "Two", column: "ready", fields: ALL }
     ]);
-    for (const to of ["backlog", "inbox", "for-review", "ideas"]) {
+    for (const to of ["backlog", "inbox", "for-review", "ideas", "in-progress"]) {
       const refused = refusal(() => moveCard(b.ctx, 1, { as: "claude", to }));
       expect(refused.code).toBe("column");
-      expect(refused.message).toMatch(/^Refused: claude is an agent and may move a card out of Ready only into In progress, to take it; not into (Backlog|Inbox|For review|Ideas)\. Nothing was written\.$/);
+      expect(refused.message).toMatch(
+        /^Refused: claude is an agent and does not move a card out of Ready \(#1 into (Backlog|Inbox|For review|Ideas|In progress)\): an agent asks the board for its card with `codelead board take --as claude`, which gives it the next card it may work, held for it in In progress\. Nothing was written\.$/
+      );
     }
-    expect(moveCard(b.ctx, 1, { as: "claude", to: "in-progress", comment: "Started: taken from Ready." }).card.column).toBe("in-progress");
-    // Out of In progress, the agent's columns again.
-    expect(moveCard(b.ctx, 1, { as: "claude", to: "for-review" }).card.column).toBe("for-review");
+    // The board gives it the card at the top of Ready (the newest, #2), held for it in In progress.
+    expect(takeCard(b.ctx, { as: "claude" })).toMatchObject({ given: true, card: { id: 2 }, claim: { by: "claude" } });
+    // Out of In progress, to hand it back: For review.
+    expect(moveCard(b.ctx, 2, { as: "claude", to: "for-review" }).card.column).toBe("for-review");
   });
 
   it("gives a card tagged for:<agent> to that agent only; a card with no such tag to any agent", async () => {
     const b = await board();
     createCards(b.ctx, "robin", [
-      { type: "task", title: "For Codex", column: "ready", fields: ALL, tags: ["for:codex"] },
-      { type: "task", title: "For CodeLead", column: "ready", fields: ALL, tags: ["for:codelead"] },
-      { type: "task", title: "For anyone", column: "ready", fields: ALL }
+      { type: "task", title: "For Codex", column: "ready", fields: { ...ALL, mayTouch: ["src/one/"] }, tags: ["for:codex"] },
+      { type: "task", title: "For CodeLead", column: "ready", fields: { ...ALL, mayTouch: ["src/two/"] }, tags: ["for:codelead"] },
+      { type: "task", title: "For anyone", column: "ready", fields: { ...ALL, mayTouch: ["src/three/"] } }
     ]);
-    const refused = refusal(() => moveCard(b.ctx, 1, { as: "claude", to: "in-progress" }));
-    expect([refused.code, refused.message]).toEqual(["not-allowed", "Refused: card #1 in Ready is for codex (for:codex); claude may not take it. Nothing was written."]);
-    expect(refusal(() => moveCard(b.ctx, 2, { as: "claude", to: "in-progress" })).message).toBe("Refused: card #2 in Ready is for codelead (for:codelead); claude may not take it. Nothing was written.");
-    expect(moveCard(b.ctx, 1, { as: "codex", to: "in-progress" }).card.column).toBe("in-progress");
-    expect(moveCard(b.ctx, 2, { as: "codelead", to: "in-progress" }).card.column).toBe("in-progress");
-    expect(moveCard(b.ctx, 3, { as: "claude", to: "in-progress" }).card.column).toBe("in-progress");
+    // claude is given the card for anyone; the cards for Codex and CodeLead are theirs, and never claude's.
+    expect(takeCard(b.ctx, { as: "claude" })).toMatchObject({ given: true, card: { id: 3 } });
+    expect(takeCard(b.ctx, { as: "claude", leaseMinutes: 5 })).toMatchObject({ given: false, reason: "at-limit" });
+    expect(takeCard(b.ctx, { as: "codex" })).toMatchObject({ given: true, card: { id: 1 } });
+    expect(takeCard(b.ctx, { as: "codelead" })).toMatchObject({ given: true, card: { id: 2 } });
+    expect(getCard(b.ctx, 3).card.column).toBe("in-progress");
   });
 
   it("keeps what a card in Ready says it may do: an agent does not change it, and no change takes it away", async () => {
@@ -318,12 +322,15 @@ describe("AGENTS.md says it in one place, and a board without Ready reads as bef
     const guide = agentsGuide(withReady);
     expect(guide).toContain("- Start code work because of a card. Work starts when the person asks for it in the session, or\n  when the person moved the card to Ready.\n");
     expect(guide).toContain("\n## Ready\nReady is the person's column of the cards an agent may pick up by itself: moving a card there is\nthe person's ask for the work.");
-    expect(guide.replace(/\n {2}/g, " ").replace(/\n(?!\n|#|- )/g, " ")).toContain("Never move a card into Ready, out of it anywhere but In progress, or change those fields while it is there: the commands refuse it.");
-    // The guide with Ready, its three differences taken back, is the guide without it.
+    expect(guide.replace(/\n {2}/g, " ").replace(/\n(?!\n|#|- )/g, " ")).toContain(
+      "Never move a card into Ready or out of it, or change those fields or a `for:` tag while it is there or held: the commands refuse it."
+    );
+    // The guide with Ready, its four differences taken back, is the guide without it: a board without Ready has no claims either.
     const back = guide
       .replace(`\n${readySection(withReady)}`, "")
       .replace(", or\n  when the person moved the card to Ready.", ".")
-      .replace("Move a card into Pinned, Ready or Done", "Move a card into Pinned or Done");
+      .replace("Move a card into Pinned, Ready or Done", "Move a card into Pinned or Done")
+      .replace("attachment.added, claim.taken,\n  claim.renewed, claim.released, claim.expired, claim.ended.", "attachment.added.");
     expect(back).toBe(agentsGuide(without));
     expect(agentsGuide(without)).not.toMatch(/Ready/);
     expect(readySection(without)).toBe("");
@@ -425,6 +432,7 @@ describe("a board made before Ready", () => {
     expect(refusal(() => moveCard(b.ctx, 1, { as: "claude", to: "check" })).message).toBe(
       "Refused: claude is an agent and may not move a card out of Ready: the board has no column an agent takes it into. Nothing was written."
     );
+    expect(takeCard(b.ctx, { as: "claude" })).toMatchObject({ given: false, reason: "no-working-column" });
 
     const theirs = await board({ old: true });
     const before = readBoardConfig(theirs.dir).config;
@@ -480,9 +488,13 @@ describe("the commands: the same check in the same words; --json carries its par
     expect(await runBoardSet("1", { as: "claude", field: ["limitMoney=10"], json: true }, b.deps)).toBe(1);
     expect(JSON.parse(b.said()).refused).toBe("not-allowed");
     expect(await runBoardMove("1", { as: "claude", to: "backlog" }, b.deps)).toBe(1);
-    expect(b.said()).toBe("Refused: claude is an agent and may move a card out of Ready only into In progress, to take it; not into Backlog. Nothing was written.");
-    expect(await runBoardMove("1", { as: "claude", to: "in-progress" }, b.deps)).toBe(0);
-    expect(b.said()).toBe("Moved #1 from Ready to In progress.");
+    expect(b.said()).toBe(
+      "Refused: claude is an agent and does not move a card out of Ready (#1 into Backlog): an agent asks the board for its card with `codelead board take --as claude`, which gives it the next card it may work, held for it in In progress. Nothing was written."
+    );
+    expect(await runBoardMove("1", { as: "claude", to: "in-progress" }, b.deps)).toBe(1);
+    b.said();
+    expect(await runBoardTake({ as: "claude" }, b.deps)).toBe(0);
+    expect(b.said().split("\n")[0]).toBe("Took #1 (question): Which store?");
     // A limit that is no number: refused by the rule (exit 1), not as a malformed command.
     expect(await runBoardSet("1", { as: "robin", field: ["limitMinutes=soon"], json: true }, b.deps)).toBe(1);
     expect(JSON.parse(b.said()).refused).toBe("ready");

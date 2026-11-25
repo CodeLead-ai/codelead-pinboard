@@ -173,7 +173,7 @@ served to this machine only. Leave the terminal running; if it stops, run the co
 - **Move cards** by dragging. **Pinned**, **Ready** and **Done** are yours alone: no agent moves a
   card into them. An agent moves one out of Pinned or Done only when you asked for that card in
   its session (to start the work, or to reopen it): a convention of `AGENTS.md`, since no command
-  can tell. Out of Ready an agent takes a card into In progress, and nowhere else (below).
+  can tell. Out of Ready no agent moves a card: the board gives an agent its card (below).
 - **Decide:** a decision card shows the ask on its face; your answer goes in its `decided`
   field, and the agent's next check lists it under "Decided".
 - **Tags, relations, attachments, a colour mark** (yours: no agent sets it) on each card;
@@ -197,8 +197,8 @@ There are two ways to give an agent a card:
 
 - **In the session:** "do card 3". The agent works while you are there.
 - **Ready:** drag the card to the **Ready** column. That is the ask: an agent may pick the card up
-  by itself, without you in the session, the next time it checks the board. The board itself
-  starts nothing.
+  by itself, without you in the session. The agent does not choose it: it asks the board for its
+  next card, and the board gives it one. The board itself starts nothing.
 
 A card goes to Ready only when it can be worked alone. It must say three things, in its fields:
 
@@ -240,26 +240,115 @@ fields:
 
 The rules, which the commands enforce for every agent:
 
-- **Only you move a card into Ready.** An agent's move there is refused, as for Pinned and Done.
-- **An agent takes a card from Ready by moving it to In progress**, and moves it nowhere else. A
-  card tagged for another agent is not its to take.
+- **Only you move a card into Ready, or out of it.** An agent's move there is refused, as for
+  Pinned and Done; so is its move out of it, into In progress too.
+- **An agent gets a card from Ready only from the board** (`take`, below). A card tagged for
+  another agent is never given to it.
 - **While a card is in Ready, its three things are your ask.** An agent may not change them, and
-  no change may take one away.
+  no change may take one away. Nor may an agent add or remove a `for:` tag there.
 - **You can move a card out of Ready** at any time, anywhere, with no check.
 
 ```
 $ pinboard move 3 --to ready --as claude
 Refused: claude is an agent and may not move a card into Ready (a person's column); an agent may move a card into Inbox, Backlog, Ideas, In progress, For review. Nothing was written.
 
-$ pinboard move 3 --to backlog --as claude
-Refused: claude is an agent and may move a card out of Ready only into In progress, to take it; not into Backlog. Nothing was written.
-
 $ pinboard move 3 --to in-progress --as claude
-Moved #3 from Ready to In progress.
+Refused: claude is an agent and does not move a card out of Ready (#3 into In progress): an agent asks the board for its card with `codelead board take --as claude`, which gives it the next card it may work, held for it in In progress. Nothing was written.
 ```
 
 With `--json`, the refusal of the check carries its parts: `"refused": "ready"`, the `card`, and
 `missing`, one entry per thing (`what`, `fields`, `words`).
+
+#### How an agent gets its card: take
+
+Agents do not race for a card and do not choose one. One place decides which agent gets which
+Ready card: the board, one agent at a time, under its lock. The agent asks; the board answers with
+one card, or with none and why.
+
+**One real run.** The agent asks for its card:
+
+```
+$ pinboard take --as claude
+Took #3 (task): Rate-limit the sign-in form
+claude holds it until 2026-11-20T09:30:00Z (30 minutes): renew it while you work (`pinboard renew 3 --as claude`), and hand it to For review when it is done.
+Done when: Five failed sign-ins in a minute lock the form for ten minutes; npm test passes.
+May touch: src/auth/, test/auth.test.ts
+Limit: 30 minutes
+docs/codelead/board/items/0003-rate-limit-the-sign-in-form.md
+```
+
+The card is now in In progress, and its file says who holds it, and until when:
+
+```yaml
+claim:
+  by: claude
+  since: 2026-11-20T09:00:00Z
+  until: 2026-11-20T09:30:00Z
+```
+
+That is a **claim**: a lease, not a flag. While it works, the agent renews it; asked for another
+card, the board says why not:
+
+```
+$ pinboard renew 3 --as claude
+#3: claude holds it until 2026-11-20T09:40:00Z (30 minutes).
+
+$ pinboard take --as claude
+Nothing for claude: it holds #3 (until 2026-11-20T09:40:00Z) already, and an agent holds at most 1 card at a time on this board (dispatch.perAgent in board.json). Hand it to For review, or give it back, then ask again.
+```
+
+When the work is done, it hands the card to For review, as for any work. The claim ends there:
+
+```
+$ pinboard move 3 --to for-review --as claude --comment "Landed: 9b1e7d2 on main; src/auth/limit.ts, test/auth.test.ts (4 tests)."
+Moved #3 from In progress to For review, with the comment.
+```
+
+**If it cannot finish**, it gives the card back instead, with the reason. The reason lands in the
+card's thread, and the card returns to Ready:
+
+```
+$ pinboard release 3 --as claude --reason "The tests need a database this machine does not have."
+Gave #3 back to Ready, with the reason in its thread.
+```
+
+**If it stops answering** (its session ended, the machine slept), the claim runs out at its time.
+The next take, by any agent, first puts the card back at the top of Ready, with an event that says
+whose claim ran out and when (`ended the claim of claude, which ran out at …: back to Ready`); then
+it gives cards as usual. No card stays stuck. Until then, `validate` notes the claim.
+
+**Which card.** Among the Ready cards the agent may work: first those tagged `for:<that agent>`,
+then those with no `for:` tag; in each group, the order of the column on the page, top first. To
+give a card to one agent, tag it `for:<agent>`; the agent cannot name the card it wants.
+
+**What keeps a card back**, each said in the answer, and on the card's tile in one short line:
+
+- **it waits on another card:** a relation `blocked-by` to a card that is not in Done
+  (`waits on #12`);
+- **its files are in use:** a card held now names an overlapping place in `mayTouch`: the same
+  path, one inside the other, or the whole repository (`its files are in use by #7`). Write
+  `mayTouch` as paths: `src/auth/`, `test/auth.test.ts`, `api:src/` for another repository, or a
+  repository's name for all of it. Anything else (a sentence) counts as the whole repository;
+- **the agent holds its limit:** at most `dispatch.perAgent` cards at a time (1 when not set);
+- **it no longer says what Ready asks** (a hand edit removed a field): it is skipped and named,
+  for you to fix.
+
+**While a card is held**, the agent that holds it renews it, gives it back, or hands it to For
+review. No other agent moves it or changes its three fields (it may comment); no agent adds or
+removes its `for:` tags. Your moves always win: a held card you move out of In progress, or
+archive, loses its claim at that move.
+
+**On the page**, a held card says who holds it and for how long (`held by Claude Code · 24 min
+left`; once its time has passed, `the claim of Claude Code ran out`), and its thread shows each
+step of the claim in plain words.
+
+**The settings**, in `board.json`, each optional:
+
+```json
+"dispatch": { "perAgent": 1, "leaseMinutes": 30, "maxLeaseMinutes": 240 }
+```
+
+`--lease <minutes>` on `take` or `renew` asks for another length, up to `maxLeaseMinutes`.
 
 **A board made before Ready** works as before, without the column. One command gives it the
 column, and says what it did; it moves no card:
@@ -299,9 +388,9 @@ step 2 and `AGENTS.md` tell it to; you see the result on the page.
   `@robin` when it needs you.
 - **It proposes:** a finding, an idea, a question for you becomes a card in Inbox, tagged
   `by:claude`. A decision card carries its recommendation in its ask; only you set `decided`.
-- **It records its work:** when you ask for a card in the session, or when it takes a card from
-  Ready, it moves the card to In progress; when the work lands, it writes what landed and hands the
-  card over in one step:
+- **It records its work:** when you ask for a card in the session, it moves the card to In
+  progress (a card the board gave it from Ready is there already); when the work lands, it writes
+  what landed and hands the card over in one step:
 
   ```
   $ pinboard move 1 --to for-review --as claude --comment "Landed: 4f2a9c1 on main; src/pages/sign-in.ts, test/sign-in.test.ts (6 tests)."
@@ -544,6 +633,9 @@ A board is a folder, `docs/codelead/board` in the repository by default:
 - A column with `"owner": "person"` is the person's: no agent moves a card into it.
 - `ready` is Ready, the person's column of the cards an agent may pick up by itself ("Handing a
   card to an agent: Ready"). A board made before it has none; `add-ready` adds it.
+- `dispatch`, optional: how many cards an agent holds at a time and how long a claim lasts
+  (`perAgent`, `leaseMinutes`, `maxLeaseMinutes`; 1, 30 and 240 when not given). See "How an
+  agent gets its card: take".
 - The participants are the whole account system. A second person is one more line.
 - Unknown keys are kept as they were read.
 
@@ -580,8 +672,11 @@ Fine. After packages 4 and 5.
 
 - The front matter is YAML. Required: `id`, `type`, `title`, `column`, `author`, `created`,
   `updated`. Also read: `tags`, `color`, `relations`, `attachments`, `fields`, `session`,
-  `status`, `archived`. Unknown keys, comments and blank lines are kept; a change rewrites only
-  the lines it changes.
+  `status`, `archived`, `claim`. Unknown keys, comments and blank lines are kept; a change
+  rewrites only the lines it changes.
+- `claim` is written by the board alone, on a card it gave an agent from Ready: `by` (the agent),
+  `since` and `until` (UTC). It is there while the card is in In progress, and goes when the claim
+  ends.
 - The text before `## Thread` is the description. Each comment is a heading
   `### <participant> · <UTC time>` and its markdown. Comments are appended, never rewritten.
 - The file name starts with the id, zero-padded, then a slug. The id is the key.
@@ -601,7 +696,18 @@ Fine. After packages 4 and 5.
 
 Kinds: `item.created`, `item.updated`, `item.moved`, `item.archived`, `item.unarchived`,
 `comment.added`, `relation.added`, `relation.removed`, `tag.added`, `tag.removed`,
-`attachment.added`.
+`attachment.added`, and those of a claim:
+
+| Kind | What happened | `data` |
+| --- | --- | --- |
+| `claim.taken` | The board gave the card to the agent (`by`) from Ready. | `until`, `minutes` |
+| `claim.renewed` | The agent that holds it renewed its claim. | `until`, `minutes` |
+| `claim.released` | The agent gave it back to Ready (its reason is the comment written with it). | `since`, `until` |
+| `claim.expired` | A take found the claim had run out, and put the card back in Ready (`by`: whose take). | `holder`, `since`, `until` |
+| `claim.ended` | The card left In progress (handed to For review, moved by the person) or was archived. | `holder`, `until`, `to` or `archived` |
+
+A move that comes with a claim (a take, a release, an expired claim) is an `item.moved` marked
+`withClaim`, written just before the claim's event; the two read as one line.
 
 The card is the truth; the line is what a check reports. A card file that changed with no event
 (a hand edit, an agent that forgot) gets an event by `unknown` at the next check, or from the
@@ -659,7 +765,10 @@ gives the same commands under its own name (`codelead board …`).
 | `show <id>` | One card: fields, relations both ways, attachments, description, thread. |
 | `new --as <you>` | Creates a card (`--type`, `--title`, `--body`, `--field`, …), or every card of a markdown file (`--batch`), all or none. `--dry-run` writes nothing. |
 | `reply <id> --as <you>` | Appends a comment (`--text` or `--file`). |
-| `move <id…> --to <column> --as <you>` | Moves a card, or several (they keep their order); an agent only into `agents.mayMoveTo`. Into Ready, only a card that says how to tell it is done, what it may touch and its limit. |
+| `move <id…> --to <column> --as <you>` | Moves a card, or several (they keep their order); an agent only into `agents.mayMoveTo`, and never out of Ready. Into Ready, only a card that says how to tell it is done, what it may touch and its limit. |
+| `take --as <agent>` | An agent asks the board for its card: the next Ready card it may work, moved to In progress and held for it, or none and why. `--lease <minutes>`. Exit 0 either way; `--json` says `given`. |
+| `renew <id> --as <agent>` | The agent that holds the card renews its claim, from now. `--lease <minutes>`. |
+| `release <id> --as <agent> --reason <text>` | The agent that holds the card gives it back to Ready, with the reason in its thread. |
 | `set <id…> --as <you>` | Changes the title (`--title`), the description (`--body`, `--body-file`), the type (`--type`), tags, relations, attachments (`--attach <path[:lines]>`), the status line, the colour, the fields of a card, or the same on several (a title or a description: one card only). |
 | `archive <id…> --as <person>` | Archives cards: they leave the board and stay in their files. A person only. |
 | `unarchive <id…> --as <person>` | Brings archived cards back to their columns. A person only. |
@@ -691,8 +800,9 @@ Every refusal, by the code `--json` gives it:
 | `not-found` | 2 | No card with the id given, a relation's included. |
 | `board-exists` | 1 | `init` where a board already is. |
 | `participant` | 1 | `--as` names no participant of the board. |
-| `not-allowed` | 1 | The participant may not do it: an agent archives, creates on a board whose `agents.mayCreate` is false, sets a card's colour, or tags a card `for:codelead` (CodeLead itself may); an agent imports; an agent takes a card from Ready that is tagged for another agent, or changes the Ready fields of a card in Ready. |
-| `column` | 1 | No such column; an agent moves or creates a card in a column it may not (a person's column, or one not in `agents.mayMoveTo`); an agent moves a card out of Ready into another column than In progress. |
+| `not-allowed` | 1 | The participant may not do it: an agent archives, creates on a board whose `agents.mayCreate` is false, sets a card's colour, or tags a card `for:codelead` (CodeLead itself may); an agent imports; an agent changes the Ready fields of a card in Ready or of a held card, or adds or removes a `for:` tag on either. |
+| `column` | 1 | No such column; an agent moves or creates a card in a column it may not (a person's column, or one not in `agents.mayMoveTo`); an agent moves a card out of Ready (the board gives it its card: `take`). |
+| `claim` | 1 | A take by a person; a lease longer than `dispatch.maxLeaseMinutes`; a renewal or a release by anyone but the agent that holds the card, or of a card no one holds; another agent's move of a held card, or its holder's move anywhere but For review. |
 | `type` | 1 | No such card type. |
 | `decision` | 1 | An agent sets or removes a decision; a decision that is not the option chosen, by a participant, on a day; an ask that is not one to three sentences. |
 | `color` | 1 | A colour that is none of the five. |
@@ -787,6 +897,18 @@ Besides the board and its cards, the page's process answers `GET` and `PUT /api/
 (the view choices, checked like a card's text: no secret, no path of this machine) and
 `POST /api/cards/batch` (one operation on several cards, `{ operation, ids, … , expectUpdated }`,
 each card written on its own and answered on its own).
+
+For a host that runs agents (a panel that shows them, a loop that starts them), the dispatcher's
+routes, each through the same core:
+
+- `GET /api/dispatch`: for the whole board, what each agent holds and what it would be given if it
+  asked now, or why not, and what keeps each Ready card back (the core's `dispatchView`). It
+  writes nothing, as the next take would decide it.
+- `POST /api/take` `{ as, lease? }`: the agent's take (the core's `takeCard`).
+- `POST /api/items/<id>/renew` `{ as, lease? }` and `POST /api/items/<id>/release`
+  `{ as, reason }`: the holder's renewal and release.
+
+Nothing in the package starts an agent, or runs a loop or a timer for one.
 
 ## Working on the package
 
