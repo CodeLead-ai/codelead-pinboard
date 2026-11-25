@@ -107,6 +107,20 @@ describe("the board's lock across processes", () => {
     }
   }, 20_000);
 
+  it("takes over a lock written before this machine last started, though a process with its writer's id runs now", () => {
+    const dir = board("restarted");
+    const lock = path.join(dir, LOCK_FILE);
+    // The writer's id is this test's own process: it runs. The lock is older than the machine's last start, so
+    // its writer was another process, gone with the restart.
+    fs.writeFileSync(lock, `${process.pid}\n${os.hostname()}\nleft-before-the-restart\n`);
+    const before = new Date(Date.now() - os.uptime() * 1000 - 120_000);
+    fs.utimesSync(lock, before, before);
+    const start = Date.now();
+    expect(withBoardLock(dir, () => "written")).toBe("written");
+    expect(Date.now() - start).toBeLessThan(2_000);
+    expect(fs.existsSync(lock)).toBe(false);
+  });
+
   it("takes over at once a lock this machine's writer left when it died, and removes only its own lock when it is done", () => {
     const dir = board("own");
     const lock = path.join(dir, LOCK_FILE);

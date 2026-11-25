@@ -58,13 +58,20 @@ function running(pid: number): boolean {
  * Whether a lock someone else holds was left by a writer that is gone. A lock written on this machine
  * by a process that no longer runs is left, at once; one whose process still runs is held, however old
  * (a writer that takes long, or a machine that slept in the middle of a write: taking it over would let
- * two writers in). A lock this machine cannot tell about (written on another one, or by a version that
+ * two writers in), unless the lock is older than this machine's last start (its writer cannot be
+ * running: the id belongs to another process now). A lock this machine cannot tell about (written on another one, or by a version that
  * wrote only its process id) is left once it is older than thirty seconds, as before.
  */
 function abandoned(text: string, ageMs: number): boolean {
   const writer = writerOf(text);
-  // This process's own id counts as running too: another thread of it may hold the lock.
-  if (writer.pid !== undefined && writer.host === os.hostname()) return !running(writer.pid);
+  if (writer.pid !== undefined && writer.host === os.hostname()) {
+    // A lock written before this machine last started was left by a writer that is gone, whatever process
+    // carries its id now: process ids start again after a restart, and a lock left by a crash would
+    // otherwise be taken for the lock of whichever process got the same id, and hold the board for good.
+    if (ageMs > os.uptime() * 1000 + LOCK_STALE_MS) return true;
+    // This process's own id counts as running too: another thread of it may hold the lock.
+    return !running(writer.pid);
+  }
   return ageMs > LOCK_STALE_MS;
 }
 
