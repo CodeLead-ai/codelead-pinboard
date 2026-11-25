@@ -4599,3 +4599,94 @@ dialog.confirm .bulk-hint {
   border-color: var(--control-line);
   white-space: nowrap;
 }
+
+/* Ready: the person's column of the cards an agent may pick up by itself. The check beside a card it
+   refused, in the ask's frame (a question put to the person); the missing things marked by a dashed rule. */
+.ready-check {
+  margin: 16px 0 0;
+  padding: 11px 14px 13px 16px;
+  border: 1px solid var(--ask-border);
+  border-left: 4px solid var(--ask-rule);
+  border-radius: 10px;
+  background: var(--ask-bg);
+}
+.ready-check-label {
+  color: var(--ask-ink);
+  font: 600 10.5px/1.2 var(--font-body);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.ready-check form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+.ready-check .refusal {
+  margin-top: 8px;
+}
+.ready-field,
+.ready-limits {
+  padding-left: 8px;
+  border-left: 2px solid transparent;
+}
+.ready-field.ready-missing,
+.ready-limits.ready-missing {
+  border-left: 2px dashed var(--danger);
+}
+.ready-field > span {
+  color: var(--ink);
+  font: 600 13px/1.35 var(--font-body);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.ready-hint {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.ready-limits {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+}
+.ready-limits-label {
+  flex: 1 0 100%;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+.ready-limits .mini-field {
+  width: 8.5em;
+}
+.ready-limits .mini-field > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.tile-not-ready {
+  margin: 4px 0 0;
+  padding-left: 6px;
+  border-left: 2px dashed var(--danger);
+  color: var(--danger);
+  font-size: 12px;
+}
+.no-ready-note {
+  margin: 6px 4px 2px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.no-ready-note code {
+  font-family: var(--font-mono);
+  color: var(--ink-2);
+}
+.composer-ready {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.composer-ready .composer-row .field-input {
+  min-width: 0;
+  flex: 1 1 0;
+}

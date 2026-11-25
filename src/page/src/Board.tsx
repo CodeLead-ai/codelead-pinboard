@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type F
 import type { BoardPayload, CardSummary, ColumnInfo, NewCardInput } from "../../server/contract.js";
 import { BubbleIcon, CheckIcon, CloseIcon, CollapseIcon, ExpandIcon, FlagIcon, GearIcon, MoreIcon, PlusIcon, TypeChip } from "./icons.js";
 import { useMentionPicker } from "./Mentions.js";
+import { NoReadyNote, readyChanges, type ReadyDraft } from "./Ready.js";
 import {
   ago,
   agoShort,
@@ -11,6 +12,7 @@ import {
   COLUMN_NOTES,
   columnCards,
   columnLabel,
+  columnName,
   EMPTY_WORDS,
   FOR_CODELEAD_TAG,
   hueOf,
@@ -20,7 +22,8 @@ import {
   onBoard,
   participantName,
   waitsForDecision,
-  type Filter
+  type Filter,
+  type ReadyRefusal
 } from "./model.js";
 
 const CARD_TYPE = "application/x-pinboard-card";
@@ -82,6 +85,8 @@ export interface BoardViewProps {
   flashed: ReadonlySet<string>;
   now: number;
   tileRefs: Map<string, HTMLElement>;
+  /** The cards whose move to Ready the board refused, by key: each tile says what to do. */
+  notReady?: Readonly<Record<string, ReadyRefusal>>;
 }
 
 /** The board (spec 6.1): the columns in the board's order, each with its count, its cards, and a drop zone. */
@@ -166,7 +171,17 @@ export function BoardView(props: BoardViewProps) {
           >
             <header className="column-head">
               <div className="column-title">
-                <h2 title={column.owner === "person" ? `${column.name}: only you move cards here; agents never do.` : undefined}>{column.name}</h2>
+                <h2
+                  title={
+                    column.id === board.ready.column
+                      ? `${column.name}: only you move cards here; an agent may pick them up by itself. A card comes here once it says how to tell it is done, what it may touch and its limit.`
+                      : column.owner === "person"
+                        ? `${column.name}: only you move cards here; agents never do.`
+                        : undefined
+                  }
+                >
+                  {column.name}
+                </h2>
                 <span className={classes("count", overLimit && "count-over")} data-testid={`count-${column.id}`}>
                   {label}
                 </span>
@@ -229,6 +244,7 @@ export function BoardView(props: BoardViewProps) {
                     flash={props.flashed.has(key)}
                     dragging={dragging === key || (dragging !== null && carried.has(key))}
                     landing={landing !== null && String(landing) === key ? landingSide : undefined}
+                    notReady={props.notReady?.[key] !== undefined}
                     now={props.now}
                     onSelect={() => props.onSelect(key)}
                     onOpen={() => props.onOpen(key)}
@@ -282,6 +298,8 @@ interface TileProps {
   dragging: boolean;
   /** A dragged card would land just above this tile ("before") or just below it ("after"). */
   landing?: "before" | "after";
+  /** The board's Ready check refused this card's move: its panel says what to fill in. */
+  notReady?: boolean;
   now: number;
   onSelect: () => void;
   onOpen: () => void;
@@ -304,7 +322,7 @@ function Tag({ tag }: { tag: string }) {
   return <span className={classes("chip", tag.startsWith("by:") && "chip-by")}>{tag}</span>;
 }
 
-function Tile({ board, card, faded, selected, picked, tabStop, unseen, addressed, flash, dragging, landing, now, onSelect, onOpen, onPick, onDragStart, onDragEnd, register, children }: TileProps) {
+function Tile({ board, card, faded, selected, picked, tabStop, unseen, addressed, flash, dragging, landing, notReady, now, onSelect, onOpen, onPick, onDragStart, onDragEnd, register, children }: TileProps) {
   const key = keyOf(card.id);
   const workingName = card.working ? participantName(board, card.working.by) : "";
   const colorName = colorNameOf(board, card.color);
@@ -403,6 +421,11 @@ function Tile({ board, card, faded, selected, picked, tabStop, unseen, addressed
         </p>
       ) : null}
       {card.status ? <p className="tile-status">{card.status}</p> : null}
+      {notReady ? (
+        <p className="tile-not-ready" data-testid="tile-not-ready">
+          Cannot go to {board.ready.column ? columnName(board, board.ready.column) : "Ready"} yet: open it to fill in what is missing.
+        </p>
+      ) : null}
       {card.tags.length > 0 ? (
         <div className="tile-tags">
           {card.tags.map((tag) => (
@@ -548,6 +571,7 @@ function MovePicker({ board, card, onPick, onCancel }: { board: BoardPayload; ca
           {column.id === card.column ? <span className="here-note">here now</span> : null}
         </button>
       ))}
+      <NoReadyNote board={board} />
     </div>
   );
 }
@@ -567,6 +591,9 @@ function Composer({ board, column, tags: startTags, onCancel, onCreate }: { boar
   });
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  // A card written in Ready says its three things at once: the board refuses one that does not.
+  const inReady = column.id === board.ready.column;
+  const [ready, setReady] = useState<ReadyDraft>({ doneWhen: "", mayTouch: "", limitMinutes: "", limitMoney: "" });
   const [busy, setBusy] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
@@ -584,7 +611,15 @@ function Composer({ board, column, tags: startTags, onCancel, onCreate }: { boar
     } catch {
       // No storage: nothing to remember.
     }
-    const done = await onCreate({ type, title: title.trim(), column: column.id, ...(description.trim() !== "" ? { description } : {}), ...(tags.length > 0 ? { tags } : {}) });
+    const fields = inReady ? Object.fromEntries(Object.entries(readyChanges(board, {}, ready)).filter(([, value]) => value !== null)) : {};
+    const done = await onCreate({
+      type,
+      title: title.trim(),
+      column: column.id,
+      ...(description.trim() !== "" ? { description } : {}),
+      ...(tags.length > 0 ? { tags } : {}),
+      ...(Object.keys(fields).length > 0 ? { fields } : {})
+    });
     setBusy(false);
     if (done) onCancel();
   };
@@ -645,6 +680,16 @@ function Composer({ board, column, tags: startTags, onCancel, onCreate }: { boar
         />
         {picker.list}
       </div>
+      {inReady ? (
+        <div className="composer-ready" role="group" aria-label="What an agent needs to work it alone" data-testid="composer-ready">
+          <textarea className="field-input" rows={2} placeholder="Done when: how anyone can tell it is done" value={ready.doneWhen} onChange={(event) => setReady({ ...ready, doneWhen: event.target.value })} aria-label="Done when" />
+          <textarea className="field-input" rows={2} placeholder="May touch: a repository, a folder or files, one a line" value={ready.mayTouch} onChange={(event) => setReady({ ...ready, mayTouch: event.target.value })} aria-label="May touch" />
+          <div className="composer-row">
+            <input className="field-input" inputMode="decimal" placeholder="Limit in minutes" value={ready.limitMinutes} onChange={(event) => setReady({ ...ready, limitMinutes: event.target.value })} aria-label="Limit in minutes" />
+            <input className="field-input" inputMode="decimal" placeholder="Limit in money" value={ready.limitMoney} onChange={(event) => setReady({ ...ready, limitMoney: event.target.value })} aria-label="Limit in money" />
+          </div>
+        </div>
+      ) : null}
       <div className="composer-actions">
         <button type="submit" className="primary" disabled={title.trim() === "" || busy}>
           Create card

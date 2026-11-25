@@ -3,6 +3,7 @@ import type { BoardPayload, CardSummary } from "../../server/contract.js";
 import { ArchiveIcon, CloseIcon, FolderIcon, TagIcon } from "./icons.js";
 import { classes, keyOf, plural } from "./model.js";
 import { PROJECT_PREFIX } from "./projects.mjs";
+import { NoReadyNote } from "./Ready.js";
 
 export type BulkAction = "move" | "archive" | "add-tag" | "remove-tag" | "project";
 
@@ -97,10 +98,15 @@ function BulkDialog({ action, board, picked, projects, knownTags, onMove, onArch
             <label key={entry.id} className={classes("bulk-choice", column === entry.id && "on")}>
               <input type="radio" name="bulk-column" value={entry.id} checked={column === entry.id} onChange={() => setColumn(entry.id)} />
               <span>{entry.name}</span>
-              {entry.owner === "person" ? <span className="bulk-note">yours: agents never move cards here</span> : null}
+              {entry.id === board.ready.column ? (
+                <span className="bulk-note">yours: an agent may pick these up; each card must say how to tell it is done, what it may touch and its limit</span>
+              ) : entry.owner === "person" ? (
+                <span className="bulk-note">yours: agents never move cards here</span>
+              ) : null}
               <span className="bulk-note bulk-count-note">{cards.filter((card) => card.column === entry.id).length > 0 ? `${cards.filter((card) => card.column === entry.id).length} there now` : ""}</span>
             </label>
           ))}
+          <NoReadyNote board={board} />
         </div>
       );
       confirm = target ? `Move ${cardsWords} to ${target.name}` : "Move";

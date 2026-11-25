@@ -22,7 +22,7 @@ import { BoardView } from "./Board.js";
 import { BulkBar } from "./BulkBar.js";
 import { CardPanel, type PanelActions } from "./CardPanel.js";
 import { FilterBar } from "./FilterBar.js";
-import { cardAbove, classes, columnCards, columnName, keyOf, lastColumnOf, matches, onBoard, rankFor, readFilter, readStack, writeQuery, type Filter } from "./model.js";
+import { cardAbove, classes, columnCards, columnName, keyOf, lastColumnOf, matches, onBoard, rankFor, readFilter, readStack, writeQuery, type Filter, type ReadyRefusal } from "./model.js";
 import { inProject, NO_PROJECT, projectEntries, projectTags, readProject } from "./projects.mjs";
 import { ProjectMenu } from "./ProjectMenu.js";
 import { extend, inBoardOrder, prune, selectAll, toggle } from "./selection.mjs";
@@ -185,6 +185,8 @@ export function App() {
   const [flashed, setFlashed] = useState<Set<string>>(() => new Set());
   const [confirm, setConfirm] = useState<string | null>(null);
   const [toThread, setToThread] = useState<string | null>(null);
+  // The cards whose move to Ready the board refused, by key: what each does not say yet (its panel shows the check, its tile a line).
+  const [readyRefused, setReadyRefused] = useState<Record<string, ReadyRefusal>>({});
   const now = useNow();
   const searchRef = useRef<HTMLInputElement>(null);
   const tileRefs = useRef(new Map<string, HTMLElement>()).current;
@@ -529,20 +531,59 @@ export function App() {
     [say]
   );
 
+  /** A card's Ready check is put away: it moved, or the person said "Not now". */
+  const forgetReady = useCallback((key: string) => {
+    setReadyRefused((previous) => {
+      if (!(key in previous)) return previous;
+      const { [key]: _gone, ...rest } = previous;
+      return rest;
+    });
+  }, []);
+
+  /** A refusal's words; a card that changed meanwhile is read again first. */
+  const refusalWords = useCallback(
+    async (key: string, error: unknown): Promise<string> => {
+      if (error instanceof Refused && error.stale) {
+        await loadDetail(key, false);
+        return `${error.message} The page has read it again.`;
+      }
+      return wordsOf(error);
+    },
+    [loadDetail]
+  );
+
   const perform = useCallback(
     async (key: string, work: () => Promise<WritePayload>): Promise<string | null> => {
       try {
         applyWrite(await work());
         return null;
       } catch (error) {
-        if (error instanceof Refused && error.stale) {
-          await loadDetail(key, false);
-          return `${error.message} The page has read it again.`;
-        }
-        return wordsOf(error);
+        return refusalWords(key, error);
       }
     },
-    [applyWrite, loadDetail]
+    [applyWrite, refusalWords]
+  );
+
+  /**
+   * A move of one card: when it lands, the card's Ready check is put away; when the board's Ready
+   * check refuses it (`ready`: the words, and each thing missing), the check is kept for the card, so
+   * that its panel shows what to fill in beside the card.
+   */
+  const performMove = useCallback(
+    async (key: string, work: () => Promise<WritePayload>): Promise<{ words: string | null; ready: boolean }> => {
+      try {
+        applyWrite(await work());
+        forgetReady(key);
+        return { words: null, ready: false };
+      } catch (error) {
+        if (error instanceof Refused && error.code === "ready" && error.missing.length > 0) {
+          setReadyRefused((previous) => ({ ...previous, [key]: { message: error.message, missing: error.missing } }));
+          return { words: error.message, ready: true };
+        }
+        return { words: await refusalWords(key, error), ready: false };
+      }
+    },
+    [applyWrite, refusalWords, forgetReady]
   );
 
   const openCard = useCallback(
@@ -585,13 +626,16 @@ export function App() {
       const place = (column: string, at: number) => (previous: BoardPayload | null): BoardPayload | null =>
         previous ? { ...previous, cards: previous.cards.map((entry) => (keyOf(entry.id) === key ? { ...entry, column, rank: at } : entry)) } : previous;
       setBoard(place(to, rank));
-      const refused = await perform(key, () => api.move(key, to, card.updated, undefined, after));
+      const { words: refused, ready } = await performMove(key, () => api.move(key, to, card.updated, undefined, after));
       if (refused) {
         setBoard(place(card.column, card.rank));
-        say(refused, "refusal");
+        // Refused by the Ready check: the card's panel opens with the check, the reason and what to fill in, beside the card.
+        if (ready) {
+          if (stack[stack.length - 1] !== key) openCard(key);
+        } else say(refused, "refusal");
       } else say(card.column === to ? `Moved #${key} within ${columnName(board, to)}.` : `Moved #${key} to ${columnName(board, to)}.`);
     },
-    [board, perform, say]
+    [board, performMove, say, stack, openCard]
   );
 
   const createCard = useCallback(
@@ -637,12 +681,32 @@ export function App() {
     () => ({
       update: (key: string, expectUpdated: string, changes: CardChangesInput) => perform(key, () => api.update(key, expectUpdated, changes)),
       say: (words: string) => say(words, "refusal"),
-      comment: (key: string, body: string, expectUpdated: string, moveTo?: string) => perform(key, () => (moveTo ? api.move(key, moveTo, expectUpdated, body) : api.comment(key, body, expectUpdated))),
+      comment: async (key: string, body: string, expectUpdated: string, moveTo?: string) =>
+        moveTo ? (await performMove(key, () => api.move(key, moveTo, expectUpdated, body))).words : perform(key, () => api.comment(key, body, expectUpdated)),
       move: async (key: string, to: string, expectUpdated: string) => {
-        const refused = await perform(key, () => api.move(key, to, expectUpdated));
-        if (refused) say(refused, "refusal");
+        const { words: refused, ready } = await performMove(key, () => api.move(key, to, expectUpdated));
+        // The Ready check's refusal shows in the panel, beside the card, with what to fill in.
+        if (refused && !ready) say(refused, "refusal");
         return refused;
       },
+      makeReady: async (key: string, expectUpdated: string, fields: Record<string, unknown>) => {
+        const to = board?.ready.column;
+        if (!to) return `The board has no Ready column; \`${board?.ready.command ?? "pinboard add-ready"}\` adds it.`;
+        let updated = expectUpdated;
+        if (Object.keys(fields).length > 0) {
+          try {
+            const result = await api.update(key, expectUpdated, { fields });
+            applyWrite(result);
+            updated = result.card.card.updated;
+          } catch (error) {
+            return refusalWords(key, error);
+          }
+        }
+        const { words } = await performMove(key, () => api.move(key, to, updated));
+        if (words === null) say(`Moved #${key} to ${columnName(board, to)}.`);
+        return words;
+      },
+      dismissReady: forgetReady,
       archive: (key: string) => setConfirm(key),
       unarchive: (key: string) => {
         void (async () => {
@@ -662,7 +726,7 @@ export function App() {
       crumb: (index: number) => setStack((previous) => previous.slice(0, index + 1)),
       close: () => setStack([])
     }),
-    [perform, say, openCard, popPanel, board, runBatch, loadDetail]
+    [perform, performMove, refusalWords, applyWrite, forgetReady, say, openCard, popPanel, board, runBatch, loadDetail]
   );
 
   // ------------------------------------------------------------------------------------------
@@ -884,6 +948,16 @@ export function App() {
       if (!payload) return;
       const target = columnName(board, to);
       const moved = changedOf(payload);
+      // The cards the Ready check refused keep their check: each tile says so, and its panel shows what to fill in. The moved ones put theirs away.
+      setReadyRefused((previous) => {
+        const next = { ...previous };
+        for (const result of payload.results) {
+          const key = keyOf(result.id);
+          if (result.refused?.code === "ready" && result.refused.missing && result.refused.missing.length > 0) next[key] = { message: result.refused.message, missing: result.refused.missing };
+          else if (result.outcome === "changed") delete next[key];
+        }
+        return next;
+      });
       const undo =
         moved.length === 0
           ? undefined
@@ -1065,6 +1139,7 @@ export function App() {
             flashed={flashed}
             now={now}
             tileRefs={tileRefs}
+            notReady={readyRefused}
           />
         ) : failure ? (
           <div className="state">
@@ -1096,6 +1171,7 @@ export function App() {
                 toThread={toThread === key}
                 onThreadShown={() => setToThread(null)}
                 actions={actions}
+                readyRefusal={readyRefused[key]}
               />
             ))}
           </div>

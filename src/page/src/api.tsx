@@ -23,7 +23,9 @@ export class Refused extends Error {
   public constructor(
     public readonly status: number,
     public readonly code: string,
-    message: string
+    message: string,
+    /** The Ready check's refusal (`code` "ready"): each thing the card does not say yet. */
+    public readonly missing: NonNullable<RefusalPayload["missing"]> = []
   ) {
     super(message);
   }
@@ -53,7 +55,7 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
   }
   if (!response.ok) {
     const refusal = data as Partial<RefusalPayload> & { error?: string };
-    throw new Refused(response.status, refusal.refused ?? "error", refusal.message ?? refusal.error ?? `The process answered ${response.status}.`);
+    throw new Refused(response.status, refusal.refused ?? "error", refusal.message ?? refusal.error ?? `The process answered ${response.status}.`, Array.isArray(refusal.missing) ? refusal.missing : []);
   }
   return data as T;
 }

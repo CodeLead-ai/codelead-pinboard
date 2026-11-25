@@ -188,6 +188,7 @@ export function tagGroups(cards: CardSummary[], reserved: string[]): TagGroup[] 
 /** The spec's words under a column's name (6.1). */
 export const COLUMN_NOTES: Record<string, string> = {
   pinned: "waits on you",
+  ready: "an agent may pick these up",
   queued: "CodeLead takes the top card",
   "in-progress": "an agent is on it",
   "for-review": "your look"
@@ -199,6 +200,7 @@ export const EMPTY_WORDS: Record<string, string> = {
   backlog: "Nothing planned. Cards wait here until they start.",
   ideas: "No ideas parked yet.",
   pinned: "No card waits on you.",
+  ready: "Nothing is ready for an agent. Drag a card here once it says how to tell it is done, what it may touch and its limit.",
   queued: "Nothing queued for CodeLead. Drag a card here and it runs next.",
   "in-progress": "No agent is on a card.",
   "for-review": "Nothing waits for your look.",
@@ -237,14 +239,34 @@ export const FIELD_LABELS: Record<string, string> = {
   hypothesis: "Hypothesis",
   worthItIf: "Worth doing if",
   toReview: "What to review",
-  verdict: "Verdict"
+  verdict: "Verdict",
+  mayTouch: "May touch",
+  limitMinutes: "Limit in minutes",
+  limitMoney: "Limit in money"
 };
 
 /** Fields whose value is markdown of more than one line. */
 export const MARKDOWN_FIELDS = new Set(["answer", "consequences", "verdict", "definitionOfDone", "toReview"]);
 
 /** Fields whose value is a list (one item per line when edited). */
-export const LIST_FIELDS = new Set(["options", "landed"]);
+export const LIST_FIELDS = new Set(["options", "landed", "mayTouch"]);
+
+/** A card the Ready check refused (core/ready.ts): its words, and each thing it does not say yet. */
+export interface ReadyRefusal {
+  message: string;
+  missing: Array<{ what: string; fields: string[]; words: string }>;
+}
+
+/** The fields a card says its three Ready things in, in the order the page shows them. */
+export function readyFieldNames(board: BoardPayload): string[] {
+  const { doneWhen, mayTouch, limitMinutes, limitMoney } = board.ready.fields;
+  return [doneWhen, mayTouch, limitMinutes, limitMoney];
+}
+
+/** True when the card holds any of the Ready fields: its panel shows them. */
+export function hasReadyFields(board: BoardPayload, fields: Record<string, unknown>): boolean {
+  return readyFieldNames(board).some((name) => fields[name] !== undefined && fields[name] !== null && fields[name] !== "");
+}
 
 export const RELATION_WORDS: Record<string, string> = {
   "parent-of": "parent of",

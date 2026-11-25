@@ -3,7 +3,8 @@ import type { BoardPayload, CardChangesInput, CardColor, CardDetail } from "../.
 import { DecidedEditor, EditableList, EditableText, GrowingText, PreviewModes, PreviewPane, SizePicker, TagEditor, usePreviewMode, type Decided } from "./Editors.js";
 import { ActivityIcon, ArchiveIcon, ChevronDown, ChevronLeft, CloseIcon, FileIcon, TypeChip } from "./icons.js";
 import { Markdown } from "./Markdown.js";
-import { ago, classes, clock, columnName, FIELD_LABELS, isAgent, LIST_FIELDS, MARKDOWN_FIELDS, participantName, plural, RELATION_WORDS } from "./model.js";
+import { ago, classes, clock, columnName, FIELD_LABELS, hasReadyFields, isAgent, LIST_FIELDS, MARKDOWN_FIELDS, participantName, plural, readyFieldNames, RELATION_WORDS, type ReadyRefusal } from "./model.js";
+import { ReadyCheck, ReadyFields } from "./Ready.js";
 
 /** A decision's ask is shown at the top of its panel, not among the decision's other fields. */
 const ASK = "ask";
@@ -17,6 +18,10 @@ export interface PanelActions {
   archive: (id: string) => void;
   /** Brings an archived card back to the board (its column), as the person. */
   unarchive: (id: string) => void;
+  /** The Ready check's "Save and move to Ready": writes the changed fields, then moves the card; the words of a refusal. */
+  makeReady: (id: string, expectUpdated: string, fields: Record<string, unknown>) => Promise<string | null>;
+  /** Puts away the Ready check of a card ("Not now"). */
+  dismissReady: (id: string) => void;
   openRelated: (id: string) => void;
   back: () => void;
   crumb: (index: number) => void;
@@ -38,6 +43,8 @@ export interface CardPanelProps {
   toThread: boolean;
   onThreadShown: () => void;
   actions: PanelActions;
+  /** A move of this card to Ready that the board refused: the check shows beside the card, with what to fill in. */
+  readyRefusal?: ReadyRefusal | undefined;
 }
 
 function Section({ title, children, aside, testId }: { title: ReactNode; children: ReactNode; aside?: ReactNode; testId?: string }) {
@@ -72,7 +79,7 @@ function decidedOf(value: unknown): Decided | undefined {
 }
 
 /** The card (spec 6.2): a panel over the board, in reading order, every field edited on its own. */
-export function CardPanel({ board, id, detail, error, below, crumbs, cards, knownTags, now, toThread, onThreadShown, actions }: CardPanelProps) {
+export function CardPanel({ board, id, detail, error, below, crumbs, cards, knownTags, now, toThread, onThreadShown, actions, readyRefusal }: CardPanelProps) {
   const top = below === 0;
   const threadRef = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -93,8 +100,10 @@ export function CardPanel({ board, id, detail, error, below, crumbs, cards, know
   const typed = board.typeFields[type] ?? [];
   const isDecision = typed.includes(ASK);
   const shownFields = typed.filter((name) => name !== ASK);
-  // Fields the card keeps from another type (an idea that became a task keeps its hypothesis).
-  const otherFields = card ? Object.keys(card.fields).filter((name) => !typed.includes(name)) : [];
+  // Fields the card keeps from another type (an idea that became a task keeps its hypothesis); the Ready fields have a section of their own.
+  const readyNames = readyFieldNames(board);
+  const otherFields = card ? Object.keys(card.fields).filter((name) => !typed.includes(name) && !readyNames.includes(name)) : [];
+  const inReady = card !== undefined && board.ready.column !== undefined && card.column === board.ready.column;
   const ask = card ? textOf(card.fields[ASK]) : "";
   const markdown = (text: string, className?: string): ReactNode => (
     <Markdown text={text} mentions={detail?.mentions} cards={cards} onOpenCard={actions.openRelated} {...(className ? { className } : {})} />
@@ -226,6 +235,17 @@ export function CardPanel({ board, id, detail, error, below, crumbs, cards, know
                   testId="panel-ask-text"
                 />
               </section>
+            ) : null}
+
+            {readyRefusal ? (
+              <ReadyCheck
+                key={readyRefusal.message}
+                board={board}
+                fields={card.fields}
+                refusal={readyRefusal}
+                onSave={(fields) => actions.makeReady(id, card.updated, fields)}
+                onDismiss={() => actions.dismissReady(id)}
+              />
             ) : null}
 
             <dl className="front-matter" aria-label="The card's front matter">
@@ -392,6 +412,10 @@ export function CardPanel({ board, id, detail, error, below, crumbs, cards, know
                   ))}
                 </div>
               </Section>
+            ) : null}
+
+            {!readyRefusal && (inReady || hasReadyFields(board, card.fields)) ? (
+              <ReadyFields board={board} fields={card.fields} updated={card.updated} shownElsewhere={shownFields} inReady={inReady} onSave={saveField} />
             ) : null}
 
             <div className="panel-pair">
