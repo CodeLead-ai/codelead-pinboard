@@ -193,7 +193,7 @@ describe("a batch: several cards from one file, all or none", () => {
     const said = refusal(() => createBatch(board.ctx, "claude", "## Fine\n\n```yaml\ntype: task\n```\n\n## Not fine\n\n```yaml\ntype: task\ncolumn: someday\n```\n", { source: "cards.md" }));
     expect(board.snapshot()).toEqual(before);
     expect(said.message).toBe(
-      'Refused: the card "## Not fine" (line 7 of cards.md): "someday" is not a column of the board (inbox, backlog, ideas, pinned, in-progress, for-review, done). Nothing was written.'
+      'Refused: the card "## Not fine" (line 7 of cards.md): "someday" is not a column of the board (inbox, backlog, ideas, pinned, ready, in-progress, for-review, done). Nothing was written.'
     );
   });
 

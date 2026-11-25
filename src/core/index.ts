@@ -4,7 +4,7 @@
  * (sanitize.ts) or by the host's, given as `sanitizer` in the board's options. The CLI
  * (`pinboard`, or a host's `board` command), the page's process and the import are its clients.
  */
-export { agentsGuide } from "./agents.js";
+export { agentsGuide, readySection } from "./agents.js";
 export {
   agentColumns,
   boardConfigPath,
@@ -28,6 +28,7 @@ export {
 } from "./boardConfig.js";
 export {
   addComment,
+  addReadyColumn,
   archiveCard,
   boardContext,
   boardLocation,
@@ -63,6 +64,7 @@ export {
   type LoadedCard,
   type NewCardInput,
   type Problem,
+  type ReadyColumnResult,
   type ValidationResult,
   type WriteResult
 } from "./board.js";
@@ -81,6 +83,27 @@ export { cleanText, findUnsafe, PRIVATE_NAMES_FILE, readPrivateNames, refuseUnsa
 export { expandHomeRelative, rewriteHomePaths, rewriteMachinePaths, type PathScope } from "./paths.js";
 export { BoardSanitizer, defaultSanitizer, type SanitizerFactory, type SanitizerPaths, type TextSanitizer } from "./sanitize.js";
 export { formatJson } from "./json.js";
+export {
+  checkedLimit,
+  columnsWithReady,
+  DONE_WHEN_FIELD,
+  forAgents,
+  isLimitField,
+  LIMIT_MINUTES_FIELD,
+  LIMIT_MONEY_FIELD,
+  limitOf,
+  MAY_TOUCH_FIELD,
+  READY_COLUMN,
+  READY_COLUMN_ID,
+  READY_FIELDS,
+  READY_TAKEN_INTO,
+  readyColumnOf,
+  readyDetails,
+  readyGaps,
+  requireReady,
+  type ReadyGap,
+  type ReadyThing
+} from "./ready.js";
 export { checkedPreferences, ensureLocalIgnored, LOCAL_FOLDER, PREFERENCES_FILE, PREFERENCES_MAX_BYTES, preferencesPath, readPreferences, writePreferences, type PreferencesRead } from "./preferences.js";
 export * from "./themes.js";
 export { digest, isIsoTime, isoSeconds, sha256, slugify, splitText } from "./text.js";

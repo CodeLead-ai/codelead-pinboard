@@ -236,7 +236,7 @@ describe("refusals, each in its own words, and nothing written", () => {
       'Refused: "codex" is not a participant of the board (robin, claude); add it to board.json\'s participants first. Nothing was written.'
     );
     expect(refusal(() => moveCard(board.ctx, 1, { as: "robin", to: "doing" })).message).toBe(
-      'Refused: "doing" is not a column of the board (inbox, backlog, ideas, pinned, in-progress, for-review, done). Nothing was written.'
+      'Refused: "doing" is not a column of the board (inbox, backlog, ideas, pinned, ready, in-progress, for-review, done). Nothing was written.'
     );
     expect(refusal(() => updateCard(board.ctx, 1, { as: "robin", changes: { type: "epic" } })).message).toBe(
       'Refused: "epic" is not a card type of the board (question, decision, task, idea, review, note). Nothing was written.'
@@ -569,7 +569,7 @@ describe("validation names every problem of every file", () => {
     const result = validateBoard(board.ctx);
     expect(result.problems).toEqual([
       { file: "items/0002-wrong.md", message: 'the type "epic" is not a card type of the board (question, decision, task, idea, review, note)' },
-      { file: "items/0002-wrong.md", message: 'the column "someday" is not a column of the board (inbox, backlog, ideas, pinned, in-progress, for-review, done)' },
+      { file: "items/0002-wrong.md", message: 'the column "someday" is not a column of the board (inbox, backlog, ideas, pinned, ready, in-progress, for-review, done)' },
       { file: "items/0002-wrong.md", message: 'the author "nobody" is not a participant of the board (robin, claude)' },
       { file: "items/0002-wrong.md", message: "relation 1: there is no card #99 on the board" },
       { file: "items/0004-secret.md", message: "the description looks like it holds a secret" },

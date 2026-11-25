@@ -110,7 +110,7 @@ describe.skipIf(!browser)("the board's page in a browser", () => {
   it("opens the board: the columns in the board's order with their counts, the tiles, the capsule", async () => {
     await page.goto(url);
     await tile(1).waitFor();
-    expect(await page.locator(".column-title h2").allTextContents()).toEqual(["Inbox", "Backlog", "Ideas", "Pinned", "In progress", "For review", "Done"]);
+    expect(await page.locator(".column-title h2").allTextContents()).toEqual(["Inbox", "Backlog", "Ideas", "Pinned", "Ready", "In progress", "For review", "Done"]);
     expect(await page.getByTestId("count-backlog").textContent()).toBe("1");
     expect(await page.getByTestId("count-pinned").textContent()).toBe("1");
     expect(await page.locator("[data-column='pinned'] .column-note").textContent()).toBe("waits on you");
@@ -192,7 +192,7 @@ describe.skipIf(!browser)("the board's page in a browser", () => {
     await tile(4).focus();
     await page.keyboard.press("m");
     await page.getByTestId("move-picker").waitFor();
-    await page.keyboard.press("7");
+    await page.keyboard.press("8");
     await page.locator("[data-column='done'] .tile[data-card='4']").waitFor();
     expect(fs.readFileSync(fileOf(4), "utf8")).toContain("column: done");
     expect(await page.getByTestId("move-picker").count()).toBe(0);
@@ -200,7 +200,7 @@ describe.skipIf(!browser)("the board's page in a browser", () => {
 
   it("filters without losing a column: counts say matching of total, the URL keeps the filter, hide removes, / searches", async () => {
     await page.getByTestId("filter-type").selectOption("decision");
-    expect(await page.locator(".column-title h2").count()).toBe(7);
+    expect(await page.locator(".column-title h2").count()).toBe(8);
     await expect.poll(() => page.getByTestId("count-pinned").textContent()).toBe("1 of 1");
     expect(await page.getByTestId("count-backlog").textContent()).toBe("0 of 2");
     expect(page.url()).toContain("type=decision");
@@ -212,7 +212,7 @@ describe.skipIf(!browser)("the board's page in a browser", () => {
     await tile(1).waitFor();
     expect(await page.getByTestId("filter-type").inputValue()).toBe("decision");
     expect(await tile(5).count()).toBe(0);
-    expect(await page.locator(".column-title h2").count()).toBe(7);
+    expect(await page.locator(".column-title h2").count()).toBe(8);
     await page.getByTestId("clear-filter").click();
     await page.getByTestId("show-fade").click();
     await expect.poll(() => tile(5).count()).toBe(1);

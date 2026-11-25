@@ -83,14 +83,15 @@ describe("codelead board, command by command, through each command's function", 
     expect(JSON.parse(fs.readFileSync(path.join(term.dir, "board.json"), "utf8"))).toMatchObject({ name: "test-workspace", check: { intervalMinutes: 30 }, nextId: 1 });
     const guide = fs.readFileSync(path.join(term.dir, "AGENTS.md"), "utf8");
     expect(guide).toContain("- You may move a card into Inbox, Backlog, Ideas, In progress (only when the person asked for\n  the work in the session) and For review; add tags and relations; create cards.");
-    expect(guide).toContain("- Move a card into Pinned or Done: those columns are the person's.");
+    expect(guide).toContain("- Move a card into Pinned, Ready or Done: those columns are the person's.");
     // About forty lines (the design); the mention rule (card #48) added its two sentences, the decision in the fields its two,
     // the conversation into cards (card #66) its four.
     // ... and the timer sentence of the check (the kick-off, 2026-11-03) its three.
     expect(guide).toContain("The check every 30 minutes needs a timer you do not have by yourself");
     // ... and the landing recorded from the comment (card #276, 2026-11-04) its two.
     // ... and, for each rule, whether the commands refuse it, and the cursor's three keys: six more.
-    expect(guide.split("\n").length).toBeLessThanOrEqual(73);
+    // ... and Ready (the column an agent may pick a card up from by itself): the second half of the first rule of Never, and its section, nine.
+    expect(guide.split("\n").length).toBeLessThanOrEqual(82);
     expect(fs.readFileSync(path.join(term.dir, ".gitignore"), "utf8")).toBe("cursors/\n.board.lock\nprivate-names.txt\n.*.tmp\n.local/\n");
     expect(await runBoardInit({}, term.deps)).toBe(1);
     expect(term.said()).toBe(`A board is already at ${term.dir} (board.json is there); nothing was written.`);
@@ -130,7 +131,7 @@ describe("codelead board, command by command, through each command's function", 
     expect(term.said()).toBe("claude: nothing new since 2026-10-04T10:00:00Z. Next check in 30 minutes.");
 
     expect(await runBoardList({}, term.deps)).toBe(0);
-    expect(term.said()).toBe(["Inbox (1)", "  #1    task     Write the skill  [repo:codelead, by:robin]", "Backlog (0)", "Ideas (0)", "Pinned (0)", "In progress (0)", "For review (0)", "Done (0)"].join("\n"));
+    expect(term.said()).toBe(["Inbox (1)", "  #1    task     Write the skill  [repo:codelead, by:robin]", "Backlog (0)", "Ideas (0)", "Pinned (0)", "Ready (0)", "In progress (0)", "For review (0)", "Done (0)"].join("\n"));
     expect(await runBoardList({ tag: ["w5"] }, term.deps)).toBe(0);
     expect(term.said().split("\n")[0]).toBe("Inbox (0 of 1)");
     expect(await runBoardList({ repo: "codelead", json: true }, term.deps)).toBe(0);
@@ -234,7 +235,7 @@ describe("codelead board, command by command, through each command's function", 
     fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("column: inbox", "column: later"));
     expect(await runBoardValidate({}, term.deps)).toBe(1);
     expect(term.said()).toBe(
-      "The board has 1 problem (1 card, 1 event, 1 cursor):\n  items/0001-one.md: the column \"later\" is not a column of the board (inbox, backlog, ideas, pinned, in-progress, for-review, done)"
+      "The board has 1 problem (1 card, 1 event, 1 cursor):\n  items/0001-one.md: the column \"later\" is not a column of the board (inbox, backlog, ideas, pinned, ready, in-progress, for-review, done)"
     );
   });
 
@@ -251,7 +252,7 @@ describe("codelead board, command by command, through each command's function", 
       expect(JSON.parse(String(said.mock.calls[0]![0])).columns[0].cards.map((card: { id: number }) => card.id)).toEqual([1]);
       await createBoardCommand().parseAsync(["move", "1", "--board", term.dir, "--to", "done", "--as", "claude"], { from: "user" });
       expect(process.exitCode).toBe(1);
-      expect(createBoardCommand().commands.map((command) => command.name())).toEqual(["init", "check", "list", "show", "new", "reply", "move", "set", "archive", "unarchive", "validate", "import", "tidy", "serve"]);
+      expect(createBoardCommand().commands.map((command) => command.name())).toEqual(["init", "check", "list", "show", "new", "reply", "move", "set", "archive", "unarchive", "validate", "add-ready", "import", "tidy", "serve"]);
     } finally {
       said.mockRestore();
       process.exitCode = exit;

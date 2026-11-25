@@ -3,21 +3,24 @@ import path from "node:path";
 import { BoardRefusal } from "./errors.js";
 import { writeFileAtomic } from "./files.js";
 import { formatJson } from "./json.js";
+import { READY_COLUMN } from "./ready.js";
 import { joinText, splitText, type Eol } from "./text.js";
 import { BOARD_SCHEMA, UNKNOWN_PARTICIPANT, type BoardColumn, type BoardConfig, type Participant } from "./types.js";
 
 /**
  * `board.json`: the columns (spec section 6.1), the card types (section 5), the reserved tag
  * namespaces, the participants, which columns an agent may move a card into (Robin's answer:
- * Inbox, Backlog, Ideas, In progress, For review; never Pinned or Done, which belong to a person),
- * the check interval, the next card id, and the workspace (the folder of the repositories a card
- * may cite as `<repository>:<path>`, relative to the repository; its parent when not given).
+ * Inbox, Backlog, Ideas, In progress, For review; never Pinned, Ready or Done, which belong to a
+ * person), the check interval, the next card id, and the workspace (the folder of the repositories
+ * a card may cite as `<repository>:<path>`, relative to the repository; its parent when not given).
+ * Ready (ready.ts) is where the person puts a card an agent may pick up by itself.
  */
 export const DEFAULT_COLUMNS: readonly BoardColumn[] = [
   { id: "inbox", name: "Inbox" },
   { id: "backlog", name: "Backlog" },
   { id: "ideas", name: "Ideas" },
   { id: "pinned", name: "Pinned", owner: "person" },
+  { ...READY_COLUMN },
   { id: "in-progress", name: "In progress" },
   { id: "for-review", name: "For review" },
   { id: "done", name: "Done", owner: "person" }

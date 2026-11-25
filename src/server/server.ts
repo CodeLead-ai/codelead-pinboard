@@ -30,7 +30,7 @@ import {
   type WriteResult,
   type YamlValue
 } from "../core/index.js";
-import type { BatchCardResult, BatchOperationName, BatchPayload, EditorInfo, EventsPayload, PreferencesPayload, RefusalPayload, WritePayload } from "./contract.js";
+import type { BatchCardResult, BatchOperationName, BatchPayload, EditorInfo, EventsPayload, PreferencesPayload, ReadyGapInfo, RefusalPayload, WritePayload } from "./contract.js";
 import { editorInfo } from "./editor.js";
 import { PageFiles } from "./page.js";
 import { BoardStream } from "./stream.js";
@@ -68,6 +68,8 @@ export interface BoardServerOptions {
   /** Default 25 s. */
   keepAliveMs?: number;
   log?: (line: string) => void;
+  /** The words a person types for the board's commands (`pinboard`, a host's `codelead board`), for what the page says to run; `pinboard` when not given. */
+  command?: string;
 }
 
 export interface BoardServer {
@@ -232,16 +234,8 @@ function changesOf(body: Body): CardChanges {
       return { path: entry.path, ...(typeof entry.lines === "string" && entry.lines.trim() !== "" ? { lines: entry.lines.trim() } : {}) };
     });
   }
-  if (input.fields !== undefined && input.fields !== null) {
-    if (typeof input.fields !== "object" || Array.isArray(input.fields)) throw usage("Refused: fields must map each field's name to its value; nothing was written.");
-    const fields: Record<string, YamlValue | null> = {};
-    for (const [key, value] of Object.entries(input.fields as Record<string, unknown>)) {
-      if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(key)) throw usage(`Refused: "${key}" is not a field name; nothing was written.`);
-      if (!isYamlValue(value)) throw usage(`Refused: the field ${key} holds a value a card cannot keep; nothing was written.`);
-      fields[key] = value;
-    }
-    changes.fields = fields;
-  }
+  const fields = fieldsOf(input.fields);
+  if (fields) changes.fields = fields;
   return changes;
 }
 
@@ -255,18 +249,35 @@ function placeOf(body: Body): CardId | null | undefined {
   return id;
 }
 
+/** A request's `fields`, each a name and a value a card can keep; a field given as null is left out. */
+function fieldsOf(value: unknown): Record<string, YamlValue | null> | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) throw usage("Refused: fields must map each field's name to its value; nothing was written.");
+  const fields: Record<string, YamlValue | null> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(key)) throw usage(`Refused: "${key}" is not a field name; nothing was written.`);
+    if (!isYamlValue(entry)) throw usage(`Refused: the field ${key} holds a value a card cannot keep; nothing was written.`);
+    fields[key] = entry;
+  }
+  return fields;
+}
+
 function newCardOf(body: Body): NewCardInput {
   const description = optionalText(body, "description", "the description");
   const column = optionalText(body, "column", "the column");
   const tags = textList(body, "tags", "tags");
   const relations = relationList(body, "relations");
+  // A new card's fields, as the composer in Ready gives them: a field given as null is none.
+  const given = fieldsOf(body.fields);
+  const fields = given ? (Object.fromEntries(Object.entries(given).filter(([, value]) => value !== null)) as Record<string, YamlValue>) : undefined;
   return {
     type: requiredText(body, "type", "type"),
     title: requiredText(body, "title", "title"),
     ...(column !== undefined && column.trim() !== "" ? { column } : {}),
     ...(description !== undefined ? { description } : {}),
     ...(tags ? { tags } : {}),
-    ...(relations ? { relations } : {})
+    ...(relations ? { relations } : {}),
+    ...(fields && Object.keys(fields).length > 0 ? { fields } : {})
   };
 }
 
@@ -321,6 +332,12 @@ function batchOf(body: Body, person: string): { as: string; operation: BulkOpera
   return { as, operation, ids, expectUpdated };
 }
 
+/** The Ready check's `missing`, from a refusal's details, as the page reads it; nothing when the refusal has none. */
+function missingOf(details: Record<string, unknown> | undefined): { missing?: ReadyGapInfo[] } {
+  const missing = details?.missing;
+  return Array.isArray(missing) ? { missing: missing as ReadyGapInfo[] } : {};
+}
+
 interface Reply {
   status: number;
   body: unknown;
@@ -371,7 +388,7 @@ export function createBoardServer(options: BoardServerOptions): BoardServer {
   };
 
   const routes: Route[] = [
-    { method: "GET", pattern: /^\/api\/board$/, run: () => ({ status: 200, body: boardPayload(ctx, editor()) }) },
+    { method: "GET", pattern: /^\/api\/board$/, run: () => ({ status: 200, body: boardPayload(ctx, editor(), options.command) }) },
     {
       method: "GET",
       pattern: /^\/api\/items\/([^/]+)$/,
@@ -448,7 +465,7 @@ export function createBoardServer(options: BoardServerOptions): BoardServer {
           return {
             id: result.id,
             outcome: result.outcome,
-            ...(result.refusal ? { refused: { code: result.refusal.code, message: result.refusal.message, reason: refusalReason(result.refusal) } } : {}),
+            ...(result.refusal ? { refused: { code: result.refusal.code, message: result.refusal.message, reason: refusalReason(result.refusal), ...missingOf(result.refusal.details) } } : {}),
             ...(summary ? { summary } : {}),
             ...(result.write && result.outcome !== "refused" ? { events: result.write.events.map((event) => eventItem(event, config)) } : {}),
             ...(result.before ? { before: result.before } : {})
@@ -524,8 +541,8 @@ export function createBoardServer(options: BoardServerOptions): BoardServer {
     res.end(text);
   };
 
-  const refuse = (res: ServerResponse, status: number, code: string, message: string): void => {
-    const body: RefusalPayload = { refused: code, message };
+  const refuse = (res: ServerResponse, status: number, code: string, message: string, details?: Record<string, unknown>): void => {
+    const body: RefusalPayload = { refused: code, message, ...(details ? { ...(details.card !== undefined ? { card: details.card as CardId } : {}), ...missingOf(details) } : {}) };
     sendJson(res, status, body);
   };
 
@@ -592,7 +609,7 @@ export function createBoardServer(options: BoardServerOptions): BoardServer {
         res.end();
         return;
       }
-      if (isBoardRefusal(error)) refuse(res, statusOfRefusal(error.code), error.code, error.message);
+      if (isBoardRefusal(error)) refuse(res, statusOfRefusal(error.code), error.code, error.message, error.details);
       else if (error instanceof RequestProblem) refuse(res, error.status, error.code, error.message);
       else {
         const message = error instanceof Error ? error.message : String(error);

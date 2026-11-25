@@ -5,6 +5,7 @@
 export {
   createBoardCommand,
   DEFAULT_BOARD_PORT,
+  runBoardAddReady,
   runBoardArchive,
   runBoardCheck,
   runBoardImport,

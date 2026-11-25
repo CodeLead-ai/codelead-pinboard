@@ -215,7 +215,7 @@ describe("the board's process: the API", () => {
     expect(status).toBe(200);
     expect(body.name).toBe("test-workspace");
     expect(body.person).toEqual({ id: "robin", kind: "person", name: "Robin" });
-    expect(body.columns.map((column) => column.name)).toEqual(["Inbox", "Backlog", "Ideas", "Pinned", "In progress", "For review", "Done"]);
+    expect(body.columns.map((column) => column.name)).toEqual(["Inbox", "Backlog", "Ideas", "Pinned", "Ready", "In progress", "For review", "Done"]);
     expect(body.columns.find((column) => column.id === "pinned")).toMatchObject({ owner: "person", agentsMay: false });
     expect(body.columns.find((column) => column.id === "for-review")).toMatchObject({ agentsMay: true });
     expect(body.lines).toBe(4);
@@ -375,7 +375,7 @@ describe("the board's process: the API", () => {
 
     const nowhere = await call<RefusalPayload>("POST", "/api/items/2/move", { to: "nowhere" });
     expect(nowhere.status).toBe(422);
-    expect(nowhere.body).toEqual({ refused: "column", message: 'Refused: "nowhere" is not a column of the board (inbox, backlog, ideas, pinned, in-progress, for-review, done). Nothing was written.' });
+    expect(nowhere.body).toEqual({ refused: "column", message: 'Refused: "nowhere" is not a column of the board (inbox, backlog, ideas, pinned, ready, in-progress, for-review, done). Nothing was written.' });
   });
 
   it("POST /api/items/:id/archive takes a card off the board; it stays readable and flagged", async () => {

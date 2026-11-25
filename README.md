@@ -435,6 +435,7 @@ A board is a folder, `docs/codelead/board` in the repository by default:
     { "id": "backlog", "name": "Backlog" },
     { "id": "ideas", "name": "Ideas" },
     { "id": "pinned", "name": "Pinned", "owner": "person" },
+    { "id": "ready", "name": "Ready", "owner": "person" },
     { "id": "in-progress", "name": "In progress" },
     { "id": "for-review", "name": "For review" },
     { "id": "done", "name": "Done", "owner": "person" }
@@ -452,6 +453,8 @@ A board is a folder, `docs/codelead/board` in the repository by default:
 ```
 
 - A column with `"owner": "person"` is the person's: no agent moves a card into it.
+- `ready` is Ready, the person's column of the cards an agent may pick up by itself ("Handing a
+  card to an agent: Ready"). A board made before it has none; `add-ready` adds it.
 - The participants are the whole account system. A second person is one more line.
 - Unknown keys are kept as they were read.
 
@@ -495,7 +498,8 @@ Fine. After packages 4 and 5.
 - The file name starts with the id, zero-padded, then a slug. The id is the key.
 - `fields` holds the type's own fields: a decision's `ask`, `options`, `recommendation`,
   `decided`, `consequences`; a task's `definitionOfDone`, `size`, `landed`; and so on
-  (`TYPE_FIELDS` in `src/core/types.ts`).
+  (`TYPE_FIELDS` in `src/core/types.ts`). Any card may also carry the fields Ready asks for:
+  `definitionOfDone`, `mayTouch`, `limitMinutes`, `limitMoney` (`src/core/ready.ts`).
 - A path a card cites is a path in the repository, or `<repository>:<path>` for another
   repository of the workspace (the repository's parent folder, or `workspace` in `board.json`).
 
@@ -566,11 +570,12 @@ gives the same commands under its own name (`codelead board …`).
 | `show <id>` | One card: fields, relations both ways, attachments, description, thread. |
 | `new --as <you>` | Creates a card (`--type`, `--title`, `--body`, `--field`, …), or every card of a markdown file (`--batch`), all or none. `--dry-run` writes nothing. |
 | `reply <id> --as <you>` | Appends a comment (`--text` or `--file`). |
-| `move <id…> --to <column> --as <you>` | Moves a card, or several (they keep their order); an agent only into `agents.mayMoveTo`. |
+| `move <id…> --to <column> --as <you>` | Moves a card, or several (they keep their order); an agent only into `agents.mayMoveTo`. Into Ready, only a card that says how to tell it is done, what it may touch and its limit. |
 | `set <id…> --as <you>` | Changes the title (`--title`), the description (`--body`, `--body-file`), the type (`--type`), tags, relations, attachments (`--attach <path[:lines]>`), the status line, the colour, the fields of a card, or the same on several (a title or a description: one card only). |
 | `archive <id…> --as <person>` | Archives cards: they leave the board and stay in their files. A person only. |
 | `unarchive <id…> --as <person>` | Brings archived cards back to their columns. A person only. |
 | `validate` | Checks every file of the board. |
+| `add-ready` | Gives a board made before Ready its Ready column, and says what it did. `AGENTS.md` is written again when it is still the package's text. No card moves. |
 | `import --from <folder>` | Turns `PINNED.md`, `DECISIONS-PENDING.md` and, with `--plan <file>`, a plan's status table into cards, once. `--from` is required; no plan is read unless it is named. |
 | `tidy --imported` | After the import: strips the bold repetition of the title from imported cards. |
 | `serve` | Serves the page on 127.0.0.1 (port 7414, or a free one). `--open` opens it. |
@@ -597,13 +602,14 @@ Every refusal, by the code `--json` gives it:
 | `not-found` | 2 | No card with the id given, a relation's included. |
 | `board-exists` | 1 | `init` where a board already is. |
 | `participant` | 1 | `--as` names no participant of the board. |
-| `not-allowed` | 1 | The participant may not do it: an agent archives, creates on a board whose `agents.mayCreate` is false, sets a card's colour, or tags a card `for:codelead` (CodeLead itself may); an agent imports. |
-| `column` | 1 | No such column; an agent moves or creates a card in a column it may not (a person's column, or one not in `agents.mayMoveTo`). |
+| `not-allowed` | 1 | The participant may not do it: an agent archives, creates on a board whose `agents.mayCreate` is false, sets a card's colour, or tags a card `for:codelead` (CodeLead itself may); an agent imports; an agent takes a card from Ready that is tagged for another agent, or changes the Ready fields of a card in Ready. |
+| `column` | 1 | No such column; an agent moves or creates a card in a column it may not (a person's column, or one not in `agents.mayMoveTo`); an agent moves a card out of Ready into another column than In progress. |
 | `type` | 1 | No such card type. |
 | `decision` | 1 | An agent sets or removes a decision; a decision that is not the option chosen, by a participant, on a day; an ask that is not one to three sentences. |
 | `color` | 1 | A colour that is none of the five. |
 | `relation` | 1 | A card related to itself; a kind of relation the board does not have; a batch's relation to a key no card of it has. |
 | `text` | 1 | An empty comment, title or tag; a title, status or tag of more than one line. |
+| `ready` | 1 | A card moved to Ready, or made there, that does not say how to tell it is done, what it may touch, or a limit in minutes or money; a change that would take one of these from a card in Ready; a limit that is not a number. |
 | `structure` | 1 | A line the card would read as its own structure (`## Thread`, a comment's heading). |
 | `secret` | 1 | The text holds a secret (a key or a token, a password, a private key). |
 | `machine-path` | 1 | The text holds a path of this machine outside the workspace. |

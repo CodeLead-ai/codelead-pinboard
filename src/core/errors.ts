@@ -33,6 +33,9 @@ export const REFUSAL_CODES = [
   "relation",
   // A text the card cannot keep as given: an empty comment, title or tag; a title, status or tag of more than one line.
   "text",
+  // A card that cannot go to Ready yet (it does not say how to tell it is done, what it may touch, or a limit), a change that
+  // would take one of these from a card in Ready, a limit that is not a number.
+  "ready",
   "usage"
 ] as const;
 
@@ -48,11 +51,14 @@ export function exitCodeOfRefusal(code: RefusalCode): 1 | 2 {
 
 export class BoardRefusal extends Error {
   public readonly code: RefusalCode;
+  /** What a program reads of the refusal beside its words, when it says more (the Ready check: the card and each thing missing). */
+  public readonly details?: Record<string, unknown>;
 
-  public constructor(code: RefusalCode, message: string) {
+  public constructor(code: RefusalCode, message: string, details?: Record<string, unknown>) {
     super(message);
     this.name = "BoardRefusal";
     this.code = code;
+    if (details !== undefined) this.details = details;
   }
 }
 

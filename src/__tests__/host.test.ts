@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createBoardCommand, type BoardLog } from "../cli/index.js";
 import { BoardSanitizer, boardContext, initBoard, type SanitizerFactory } from "../core/index.js";
 
-const COMMANDS = ["init", "check", "list", "show", "new", "reply", "move", "set", "archive", "unarchive", "validate", "import", "tidy", "serve"];
+const COMMANDS = ["init", "check", "list", "show", "new", "reply", "move", "set", "archive", "unarchive", "validate", "add-ready", "import", "tidy", "serve"];
 
 const roots: string[] = [];
 let exitCode: typeof process.exitCode;
@@ -54,7 +54,7 @@ describe("the command tree for a host and for the bin", () => {
     const log = recorder();
     await createBoardCommand({ log }).parseAsync(["list", "--board", dir], { from: "user" });
     expect(process.exitCode).toBe(0);
-    expect(log.said.join("\n")).toBe(["Inbox (0)", "Backlog (0)", "Ideas (0)", "Pinned (0)", "In progress (0)", "For review (0)", "Done (0)"].join("\n"));
+    expect(log.said.join("\n")).toBe(["Inbox (0)", "Backlog (0)", "Ideas (0)", "Pinned (0)", "Ready (0)", "In progress (0)", "For review (0)", "Done (0)"].join("\n"));
     expect(log.warned).toEqual([]);
   });
 

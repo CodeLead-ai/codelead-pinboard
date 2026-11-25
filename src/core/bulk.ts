@@ -56,7 +56,8 @@ export interface BulkCardResult {
   /** "changed": the write appended events; "unchanged": nothing to change on this card, nothing written; "refused": the core refused it, nothing written for it. */
   outcome: "changed" | "unchanged" | "refused";
   write?: WriteResult;
-  refusal?: { code: RefusalCode; message: string };
+  /** The core's refusal of this card's write: its code, its words, and what it says beside them for a program (the Ready check's `missing`). */
+  refusal?: { code: RefusalCode; message: string; details?: Record<string, unknown> };
   before?: BulkBefore;
 }
 
@@ -191,7 +192,7 @@ export function bulkWrite(ctx: BoardContext, input: BulkInput): BulkCardResult[]
       results.push({ id: write.card.id, outcome: write.events.length > 0 ? "changed" : "unchanged", write, ...(before ? { before } : {}) });
     } catch (error) {
       if (!isBoardRefusal(error)) throw error;
-      results.push({ id, outcome: "refused", refusal: { code: error.code, message: error.message }, ...(before ? { before } : {}) });
+      results.push({ id, outcome: "refused", refusal: { code: error.code, message: error.message, ...(error.details ? { details: error.details } : {}) }, ...(before ? { before } : {}) });
     }
   }
   return results;
@@ -202,6 +203,8 @@ export function refusalReason(refusal: { code: RefusalCode; message: string }): 
   if (refusal.code === "stale") return "changed since you read it";
   if (refusal.code === "not-found") return "is not on the board";
   if (refusal.code === "busy") return "was being written by another writer; try again";
+  // The Ready check names the card itself ("Card #42 cannot go to Ready yet: …"): the line goes on from its verb.
+  if (refusal.code === "ready" && /^Card #\S+ /.test(refusal.message)) return refusal.message.replace(/^Card #\S+ /, "").replace(/\.?\s*Nothing was written\b[\s\S]*$/, "").trim();
   return refusal.message
     .replace(/^Refused: /, "")
     .replace(/[;.]?\s*Nothing was written\.?\s*$/i, "")

@@ -168,13 +168,23 @@ describe("the design's examples are the formats (golden files)", () => {
       "- Every change gets its event line, `by` you. Times are UTC: `2026-10-03T00:52:10Z`.",
       "",
       "## Never",
-      "- Start code work because of a card. Work starts when the person asks for it in the session.",
-      "- Move a card into Pinned or Done: those columns are the person's.",
+      "- Start code work because of a card. Work starts when the person asks for it in the session, or",
+      "  when the person moved the card to Ready.",
+      "- Move a card into Pinned, Ready or Done: those columns are the person's.",
       "- Edit or remove a comment, yours or another's; you only append to the thread.",
       "- Write secrets (keys, passwords, tokens), names the project keeps private",
       "  (`private-names.txt`), or paths of your machine (`<home>/…`, `C:\\…`) into a card. Cite files",
       "  by their path in the repository, or `<repository>:<path>` for another repository. The commands",
       "  refuse such a text, a path that starts with `~/` included.",
+      "",
+      "## Ready",
+      "Ready is the person's column of the cards an agent may pick up by itself: moving a card there is",
+      "the person's ask for the work. A card there says how to tell it is done",
+      "(`fields.definitionOfDone`), what it may touch (`fields.mayTouch`) and its limit",
+      "(`fields.limitMinutes`, `fields.limitMoney`): keep to them. Take a card from Ready by moving it",
+      "to In progress before you start; a card tagged `for:<agent>` is that agent's alone. Never move a",
+      "card into Ready, out of it anywhere but In progress, or change those fields while it is there:",
+      "the commands refuse it.",
       "",
       "## Work the person asked for",
       "When it is done: comment with what landed (the commit, the evidence record's id, the files),",
@@ -211,7 +221,10 @@ describe("the design's examples are the formats (golden files)", () => {
     const ctx = boardContext({ dir, root: path.resolve(dir, "../../..") });
     initBoard(ctx, { name: "codelead-workspace", participants: [{ id: "robin", kind: "person", name: "Robin" }, { id: "claude", kind: "agent", name: "Claude Code" }] });
     const design = designFile("board.json");
-    expect(fs.readFileSync(path.join(dir, "board.json"), "utf8")).toBe(design.replace(/\n}\n$/, ',\n  "check": { "intervalMinutes": 30 },\n  "nextId": 1\n}\n'));
+    // The design's board, made before Ready, with Ready where a new board has it: after Pinned, before In progress.
+    const withReady = design.replace('"owner": "person" },\n', '"owner": "person" },\n    { "id": "ready", "name": "Ready", "owner": "person" },\n');
+    expect(withReady).not.toBe(design);
+    expect(fs.readFileSync(path.join(dir, "board.json"), "utf8")).toBe(withReady.replace(/\n}\n$/, ',\n  "check": { "intervalMinutes": 30 },\n  "nextId": 1\n}\n'));
   });
 });
 
@@ -422,7 +435,7 @@ describe("AGENTS.md for a board CodeLead joined", () => {
     expect(words).toContain('the person answers in its thread and moves it back to Backlog, tagged `for:codelead`');
     expect(words).toContain("Agents do not add or remove the tag (the commands refuse an agent's adding it: ask the person in the thread)");
     expect(words).toContain("CodeLead moves each card to In progress (out of Pinned too) and keeps the tag.");
-    expect(words).toContain('never moves a card into Pinned or Done');
+    expect(words).toContain('never moves a card into Pinned, Ready or Done');
     expect(words).not.toContain('The queue is the column');
     expect(words).not.toContain('drag it back');
     expect(words.includes('untagged cards after the tagged cards')).toBe(legacy);

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { agentsGuide } from "./agents.js";
+import { agentsGuide, readySection } from "./agents.js";
 import {
   agentColumns,
   boardConfigPath,
@@ -26,6 +26,19 @@ import type { SanitizerFactory } from "./sanitize.js";
 import { checkedAsk, checkedDecided, decisionProblems, readDecision, requireCardColor, type DecisionWriter } from "./marks.js";
 import { mentionsIn } from "./mentions.js";
 import {
+  checkedLimit,
+  columnsWithReady,
+  isLimitField,
+  READY_COLUMN_ID,
+  READY_FIELDS,
+  readyColumnOf,
+  readyGaps,
+  refuseAgentReadyFields,
+  requireMayLeaveReady,
+  requireReady,
+  requireStillReady
+} from "./ready.js";
+import {
   changedParts,
   fileStamp,
   partsOf,
@@ -37,7 +50,7 @@ import {
   type FileStamp,
   type FilesSeen
 } from "./state.js";
-import { digest, isIsoTime, isoSeconds, slugify, timeOf } from "./text.js";
+import { digest, isIsoTime, isoSeconds, joinText, slugify, splitText, timeOf } from "./text.js";
 import {
   ASK_FIELD,
   BOARD_FOLDER,
@@ -71,6 +84,10 @@ import { sameValue, type YamlMap, type YamlValue } from "./yaml.js";
  *   a convention of AGENTS.md: no command can tell whether the person asked for it). The person's
  *   marks are the person's: an agent sets no decision and no colour, and tags no card
  *   `for:codelead` (the queue for CodeLead; CodeLead itself may).
+ * - Ready (ready.ts) is the person's column of the cards an agent may pick up by itself: a card goes
+ *   there only when it says how to tell it is done, what it may touch and a limit (`readyGaps`); an
+ *   agent takes a card out of it into In progress and nowhere else, and does not change what a card
+ *   there says it may do.
  * - A write that names the `updated` it read is refused when the card's `updated` differs (a
  *   stale write), and every write is refused when the card's file changed while it was written.
  * - No text holding a secret, a path of this machine or a private name is written (guard.ts). A
@@ -318,7 +335,9 @@ function requireParticipant(config: BoardConfig, id: string): Participant {
 
 function requireColumn(config: BoardConfig, idOrName: string): BoardColumn {
   const column = columnOf(config, idOrName);
-  if (!column) throw new BoardRefusal("column", `Refused: "${idOrName}" is not a column of the board (${config.columns.map((entry) => entry.id).join(", ")}). Nothing was written.`);
+  // A board made before Ready: the refusal says how it gets the column.
+  const ready = idOrName.trim().toLowerCase() === READY_COLUMN_ID && !config.columns.some((entry) => entry.id === READY_COLUMN_ID) ? " `codelead board add-ready` gives the board its Ready column." : "";
+  if (!column) throw new BoardRefusal("column", `Refused: "${idOrName}" is not a column of the board (${config.columns.map((entry) => entry.id).join(", ")}). Nothing was written.${ready}`);
   return column;
 }
 
@@ -625,11 +644,18 @@ function decisionWriter(config: BoardConfig, as: string, at: string): DecisionWr
 
 /**
  * The type's fields as a card keeps them: an ask checked (a text, one to three sentences), a
- * decision checked (`checkedDecided`: the option chosen, by a participant, on a day), an empty one
- * left out.
+ * decision checked (`checkedDecided`: the option chosen, by a participant, on a day), a limit for
+ * Ready as a number (`checkedLimit`), an empty one left out.
  */
 function checkedFields(fields: YamlMap, writer: DecisionWriter): YamlMap {
   let kept = fields;
+  for (const name of Object.keys(kept).filter(isLimitField)) {
+    const limit = checkedLimit(name, kept[name]!);
+    if (limit === null) {
+      const { [name]: _emptied, ...rest } = kept;
+      kept = rest;
+    } else kept = { ...kept, [name]: limit };
+  }
   if (Object.prototype.hasOwnProperty.call(kept, ASK_FIELD)) {
     const { [ASK_FIELD]: raw, ...rest } = kept;
     const ask = raw === null || raw === undefined ? undefined : checkedAsk(raw);
@@ -705,7 +731,9 @@ function labelled<T>(label: string | undefined, work: () => T): T {
     return work();
   } catch (error) {
     if (!(error instanceof BoardRefusal)) throw error;
-    throw new BoardRefusal(error.code, `Refused: ${label}: ${error.message.replace(/^Refused: /, "")}`);
+    // The words go on after the label: a refusal that begins with its own subject ("The new card cannot …") goes on in lower case.
+    const words = error.message.startsWith("Refused: ") ? error.message.slice("Refused: ".length) : error.message.charAt(0).toLowerCase() + error.message.slice(1);
+    throw new BoardRefusal(error.code, `Refused: ${label}: ${words}`, error.details);
   }
 }
 
@@ -784,6 +812,9 @@ export function createCards(ctx: BoardContext, as: string, inputs: NewCardInput[
         description,
         thread: []
       };
+      // A card made in Ready (by a person: an agent was refused above) can be worked alone, as one moved there.
+      const ready = readyColumnOf(config);
+      if (ready !== undefined && column.id === ready.id) requireReady(data, ready, { created: true });
       refuseUnsafeCard(writing.scope, data, names);
       const text = serializeCard(data);
       const reread = parseCardText(text);
@@ -838,7 +869,9 @@ export function addComment(ctx: BoardContext, id: CardId, input: { as: string; b
 }
 
 /**
- * Moves a card into a column (an agent: only into its columns). With `comment`, the comment is
+ * Moves a card into a column (an agent: only into its columns). Into Ready, a card goes only when it
+ * can be worked alone (`requireReady`); out of Ready, an agent takes a card meant for it into In
+ * progress and nowhere else (`requireMayLeaveReady`). With `comment`, the comment is
  * written first, both events carry the same time, and each names the other (`data.withMove` on the
  * comment, `data.withComment` on the move: "comment and move", one line wherever events are listed).
  * A card already in the
@@ -867,6 +900,10 @@ export function moveCard(
   return changeCard(ctx, id, input.as, input.expectUpdated, (card, config, participant, at, cards) => {
     const column = requireColumn(config, input.to);
     requireMayEnter(config, participant, column, "move a card into");
+    // Ready (ready.ts): an agent takes a card out of it into In progress only; a card goes into it only when it can be worked alone.
+    const ready = readyColumnOf(config);
+    if (ready !== undefined && card.column === ready.id && column.id !== ready.id) requireMayLeaveReady(config, participant, card, ready, column);
+    if (ready !== undefined && column.id === ready.id && card.column !== ready.id) requireReady(card, ready);
     const events: BoardEvent[] = [];
     let comment: Comment | undefined;
     if (input.comment !== undefined) {
@@ -1052,7 +1089,8 @@ export function updateCard(ctx: BoardContext, id: CardId, input: { as: string; c
       const changed = new Set<string>();
       const writer = decisionWriter(config, by, at);
       for (const [key, raw] of Object.entries(changes.fields)) {
-        const value = raw === null ? null : key === ASK_FIELD ? (checkedAsk(raw) ?? null) : key === DECIDED_FIELD ? (checkedDecided(raw, writer) ?? null) : raw;
+        const value =
+          raw === null ? null : key === ASK_FIELD ? (checkedAsk(raw) ?? null) : key === DECIDED_FIELD ? (checkedDecided(raw, writer) ?? null) : isLimitField(key) ? checkedLimit(key, raw) : raw;
         if (value === null) {
           if (Object.prototype.hasOwnProperty.call(next.fields, key)) {
             delete next.fields[key];
@@ -1067,6 +1105,12 @@ export function updateCard(ctx: BoardContext, id: CardId, input: { as: string; c
         changed.add(key === ASK_FIELD ? "ask" : "fields");
       }
       if (changed.size > 0) {
+        // A card in Ready keeps what it says it may do: the person's ask, which no agent changes and no change takes away.
+        const ready = readyColumnOf(config);
+        if (ready !== undefined && card.column === ready.id) {
+          refuseAgentReadyFields(participant, ready, READY_FIELDS.filter((name) => !sameValue(card.fields[name], next.fields[name])));
+          requireStillReady(card, next.fields, ready);
+        }
         refuseUnsafeCard(scope, { ...next, thread: [] }, names);
         for (const name of ["ask", "fields"]) if (changed.has(name)) updated.push(name);
       }
@@ -1373,6 +1417,77 @@ export function initBoard(ctx: BoardContext, options: InitOptions = {}): string[
   return written;
 }
 
+/** What `addReadyColumn` did. */
+export interface ReadyColumnResult {
+  /** True when the column was added now; false when the board had it already (nothing was written). */
+  added: boolean;
+  /** The Ready column as board.json now holds it. */
+  column: BoardColumn;
+  /** The ids of the columns it stands between, when there are. */
+  after?: string;
+  before?: string;
+  /**
+   * AGENTS.md: "written" again with the Ready rules (it was the package's text for the board as it
+   * was), "created" (there was none), "kept" as it is (someone changed it: `section` holds the lines
+   * to add by hand), or "unchanged" (nothing was added).
+   */
+  guide: "written" | "created" | "kept" | "unchanged";
+  /** The guide's section on Ready, when the guide was kept. */
+  section?: string;
+}
+
+/**
+ * Gives a board made before Ready its Ready column (ready.ts), once: board.json gains the column
+ * before In progress (or at the end, on a board without one), every other column and key kept, and
+ * AGENTS.md is written again from it when it is still the text this package wrote for the board as
+ * it was; a guide someone changed is left as it is. No card moves and no event is written. A board
+ * that has Ready already is left as it is; a column "ready" the person does not own is refused, in
+ * words that say how to go on.
+ */
+export function addReadyColumn(ctx: BoardContext): ReadyColumnResult {
+  return withBoardLock(ctx.dir, () => {
+    const file = readBoardConfig(ctx.dir);
+    const { config } = file;
+    const place = (columns: BoardColumn[], at: number): { after?: string; before?: string } => ({
+      ...(columns[at - 1] ? { after: columns[at - 1]!.id } : {}),
+      ...(columns[at + 1] ? { before: columns[at + 1]!.id } : {})
+    });
+    const existing = readyColumnOf(config);
+    if (existing) return { added: false, column: existing, ...place(config.columns, config.columns.indexOf(existing)), guide: "unchanged" };
+    if (config.columns.some((column) => column.id === READY_COLUMN_ID)) {
+      throw new BoardRefusal(
+        "column",
+        `Refused: board.json has a column "${READY_COLUMN_ID}" that is not the person's, so it cannot be Ready: make it the person's ("owner": "person", and out of agents.mayMoveTo), or give it another id, then run this again. Nothing was written.`
+      );
+    }
+    const { columns, at } = columnsWithReady(config.columns);
+    const next: BoardConfig = { ...config, columns };
+    const problems = boardConfigProblems(next);
+    if (problems.length > 0) throw new BoardRefusal("invalid", `Refused: board.json with Ready would not be valid: ${problems.join("; ")}. Nothing was written.`);
+    const guidePath = path.join(ctx.dir, "AGENTS.md");
+    let current: string | undefined;
+    try {
+      current = fs.readFileSync(guidePath, "utf8");
+    } catch {
+      current = undefined;
+    }
+    writeBoardConfig(ctx.dir, file, next);
+    let guide: ReadyColumnResult["guide"];
+    if (current === undefined) {
+      writeFileAtomic(guidePath, agentsGuide(next));
+      guide = "created";
+    } else {
+      // Compared as text: a checkout that turned the line endings keeps them, and its guide is still the package's.
+      const { text, eol, bom } = splitText(current);
+      if (text === agentsGuide(config)) {
+        writeFileAtomic(guidePath, joinText(agentsGuide(next), eol, bom));
+        guide = "written";
+      } else guide = "kept";
+    }
+    return { added: true, column: columns[at]!, ...place(columns, at), guide, ...(guide === "kept" ? { section: readySection(next) } : {}) };
+  });
+}
+
 // ---------------------------------------------------------------------------------------------
 // Validation: every file, every rule, every problem named
 
@@ -1414,6 +1529,9 @@ export function cardProblemsOnBoard(card: Card, config: BoardConfig, ids: Set<st
   // The person's answer to a decision: the option chosen, by a participant, on a day (null or none: not decided).
   const decided = card.fields[DECIDED_FIELD];
   if (decided !== undefined && decided !== null) for (const problem of decisionProblems(decided, participants)) problems.push(`"fields.decided" ${problem}`);
+  // A card in Ready (put there by hand, or changed by hand since) that an agent could not work alone.
+  const ready = readyColumnOf(config);
+  if (ready !== undefined && card.column === ready.id && card.archived === undefined) for (const gap of readyGaps(card.fields)) problems.push(`the card is in ${ready.name}, and ${gap.words}`);
   if (card.id !== "" && !fileNameFitsId(path.posix.basename(card.file), card.id)) {
     problems.push(`the file's name does not begin with the card's id (${cardFileName(card.id, "…")})`);
   }

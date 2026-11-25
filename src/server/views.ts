@@ -6,8 +6,13 @@ import {
   cardRanks,
   DECIDED_FIELD,
   describeEvent,
+  DONE_WHEN_FIELD,
   eventLines,
   excerpt,
+  LIMIT_MINUTES_FIELD,
+  LIMIT_MONEY_FIELD,
+  MAY_TOUCH_FIELD,
+  readyColumnOf,
   getCard,
   intervalMinutes,
   readBoard,
@@ -27,7 +32,7 @@ import {
   type ReadEvent,
   type YamlValue
 } from "../core/index.js";
-import type { BoardPayload, CardDetail, CardSummary, EditorInfo, EventItem, NotificationGroup, NotificationsPayload, ParticipantInfo } from "./contract.js";
+import type { BoardPayload, CardDetail, CardSummary, EditorInfo, EventItem, NotificationGroup, NotificationsPayload, ParticipantInfo, ReadyInfo } from "./contract.js";
 import { attachmentLine, mentionsIn } from "./editor.js";
 
 /**
@@ -175,7 +180,21 @@ export function summariesOf(ctx: BoardContext, ids: CardId[]): Map<string, CardS
   return out;
 }
 
-export function boardPayload(ctx: BoardContext, editor: EditorInfo): BoardPayload {
+/** The words a person types for the board's commands, when the host gives none: the package's own bin. */
+export const DEFAULT_COMMAND = "pinboard";
+
+/** Ready on this board: its column when it has one, the fields a card there says its three things in, and the command that adds the column. */
+export function readyInfo(config: BoardConfig, command = DEFAULT_COMMAND): ReadyInfo {
+  const column = readyColumnOf(config);
+  return {
+    ...(column ? { column: column.id } : {}),
+    fields: { doneWhen: DONE_WHEN_FIELD, mayTouch: MAY_TOUCH_FIELD, limitMinutes: LIMIT_MINUTES_FIELD, limitMoney: LIMIT_MONEY_FIELD },
+    command: `${command} add-ready`
+  };
+}
+
+/** `command`: the words a person types for the board's commands (`pinboard`, `codelead board`), for what the page says to run. */
+export function boardPayload(ctx: BoardContext, editor: EditorInfo, command = DEFAULT_COMMAND): BoardPayload {
   const view = readBoard(ctx);
   const { config } = view;
   const person = personOf(config);
@@ -203,7 +222,8 @@ export function boardPayload(ctx: BoardContext, editor: EditorInfo): BoardPayloa
     unreadable: view.unreadable,
     lines: count,
     editor,
-    checkMinutes: intervalMinutes(config)
+    checkMinutes: intervalMinutes(config),
+    ready: readyInfo(config, command)
   };
 }
 

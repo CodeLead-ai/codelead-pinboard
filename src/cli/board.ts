@@ -29,6 +29,8 @@ import {
   markOpened,
   moveCard,
   parseCardId,
+  addReadyColumn,
+  READY_FIELDS,
   readBoard,
   readBoardConfig,
   refusalReason,
@@ -254,7 +256,7 @@ async function run(options: Common, dependencies: BoardCliDependencies, work: (c
       return 2;
     }
     if (isBoardRefusal(error)) {
-      output(options.json ? JSON.stringify({ refused: error.code, message: error.message }) : error.message);
+      output(options.json ? JSON.stringify({ refused: error.code, message: error.message, ...(error.details ?? {}) }) : error.message);
       return exitCodeOfRefusal(error.code);
     }
     throw error;
@@ -348,13 +350,13 @@ function fieldOf(text: string): [string, YamlValue] {
   return [name, raw];
 }
 
-/** The fields to set, each one of the type's own (a typo is refused, not written as a new field). */
+/** The fields to set, each one of the type's own or one any card carries for Ready (a typo is refused, not written as a new field). */
 function typedFields(texts: string[], type: string): Record<string, YamlValue> {
   const known = TYPE_FIELDS[type];
   const fields: Record<string, YamlValue> = {};
   for (const text of texts) {
     const [name, value] = fieldOf(text);
-    if (known && !known.includes(name)) {
+    if (known && !known.includes(name) && !READY_FIELDS.includes(name)) {
       throw new UsageError(
         known.length === 0
           ? `${withArticle(type).replace(/^a/, "A")} has no fields; "${name}" is not one.`
@@ -431,7 +433,7 @@ function bulkSummary(results: BulkCardResult[], json: boolean | undefined, headi
             id: result.id,
             outcome: result.outcome,
             ...(result.write && result.outcome !== "refused" ? { card: result.write.card, events: result.write.events } : {}),
-            ...(result.refusal ? { refused: result.refusal.code, message: result.refusal.message } : {})
+            ...(result.refusal ? { refused: result.refusal.code, message: result.refusal.message, ...(result.refusal.details ?? {}) } : {})
           }))
         },
         null,
@@ -884,6 +886,38 @@ export async function runBoardValidate(options: Common, dependencies: BoardCliDe
   });
 }
 
+/**
+ * `add-ready`: gives a board made before the Ready column that column (the core's `addReadyColumn`),
+ * and says what it did: where the column stands, what became of AGENTS.md, that no card moved. A
+ * board that has Ready already is left as it is.
+ */
+export async function runBoardAddReady(options: Common, dependencies: BoardCliDependencies = {}): Promise<number> {
+  return run(options, dependencies, (ctx, output) => {
+    const result = addReadyColumn(ctx);
+    if (options.json) {
+      output(JSON.stringify(result, null, 2));
+      return 0;
+    }
+    const { config } = readBoardConfig(ctx.dir);
+    const after = result.after !== undefined ? columnName(config, result.after) : undefined;
+    const before = result.before !== undefined ? columnName(config, result.before) : undefined;
+    const where = after && before ? `between ${after} and ${before}` : after ? `after ${after}` : before ? `before ${before}` : "the only column";
+    if (!result.added) {
+      output(`The board has ${result.column.name} already (the column "${result.column.id}", ${where}); nothing was written.`);
+      return 0;
+    }
+    const lines = [
+      `Added the column ${result.column.name} to board.json, ${where}. It is yours: put a card there that an agent may pick up by itself, once the card says how to tell it is done, what it may touch and its limit.`
+    ];
+    if (result.guide === "written") lines.push(`AGENTS.md is written again, with the ${result.column.name} rules.`);
+    else if (result.guide === "created") lines.push(`There was no AGENTS.md: it is written now, with the ${result.column.name} rules.`);
+    else lines.push(`AGENTS.md is left as it is: it is not the text this package wrote for the board (someone changed it). Add these lines to it, before "## Work the person asked for":`, "", (result.section ?? "").trimEnd(), "");
+    lines.push("No card was moved.");
+    output(lines.join("\n"));
+    return 0;
+  });
+}
+
 export async function runBoardImport(options: BoardImportOptions, dependencies: BoardCliDependencies = {}): Promise<number> {
   return run(options, dependencies, (ctx, output) => {
     const cwd = dependencies.cwd?.() ?? process.cwd();
@@ -972,6 +1006,8 @@ export async function runBoardServe(options: BoardServeOptions, dependencies: Bo
       ...(ctx.sanitizer ? { sanitizer: ctx.sanitizer } : {}),
       pageDir,
       ...(dependencies.settleMs !== undefined ? { settleMs: dependencies.settleMs } : {}),
+      // What the page says to run (`… add-ready` on a board without Ready), in the words this command tree is typed with.
+      command: dependencies.command ?? "codelead board",
       log: (line) => output(line)
     });
   } catch (error) {
@@ -1144,7 +1180,9 @@ export function createBoardCommand(host: BoardHost = {}): Command {
   );
   board.addCommand(
     rewritable(common(new Command("move")))
-      .description("Move one card, or several, to a column (an agent: only into agents.mayMoveTo, never a person's column); several cards keep their order there, and a refusal of one leaves the others moved")
+      .description(
+        "Move one card, or several, to a column (an agent: only into agents.mayMoveTo, never a person's column); into Ready only a card that says how to tell it is done, what it may touch and its limit; several cards keep their order there, and a refusal of one leaves the others moved"
+      )
       .argument("<ids...>", "the card's id, or several ids (3 4 7)")
       .option("--to <column>", "the column (its id or name)")
       .option("--as <participant>", "who moves it")
@@ -1170,7 +1208,11 @@ export function createBoardCommand(host: BoardHost = {}): Command {
       .option("--attach <path[:lines]>", "attach a file, as docs/plan.md:40-60 or <repository>:<path> (repeatable)", collect)
       .option("--status <text>", "the one-line status beside the column (an empty text removes it)")
       .option("--color <hex|none>", "the person's colour mark: b33f40 red, ed944d orange, edd94c yellow, 48a14d green, 6577b3 blue (quote it when you write the #), or none")
-      .option("--field <name=value>", 'set a field of the card\'s type, as ask="…" on a decision; a JSON list or mapping is read as one (repeatable)', collect)
+      .option(
+        "--field <name=value>",
+        'set a field of the card\'s type, as ask="…" on a decision, or one Ready needs on any card (definitionOfDone, mayTouch, limitMinutes, limitMoney); a JSON list or mapping is read as one (repeatable)',
+        collect
+      )
       .option("--unset-field <name>", "remove a field, one the card keeps from another type too (repeatable)", collect)
       .option("--if-updated <time>", "refuse when the card's updated is not this (a stale write); with one id only")
       .action(async (ids: string[], options: BoardSetOptions) => exit(await runBoardSet(ids, options, deps)))
@@ -1195,6 +1237,13 @@ export function createBoardCommand(host: BoardHost = {}): Command {
     common(new Command("validate"))
       .description("Check every file of the board; exit 1 with the reasons when something is wrong")
       .action(async (options: Common) => exit(await runBoardValidate(options, deps)))
+  );
+  board.addCommand(
+    common(new Command("add-ready"))
+      .description(
+        "Give a board made before the Ready column that column: where you put a card an agent may pick up by itself; AGENTS.md is written again when it is still the package's text; no card moves"
+      )
+      .action(async (options: Common) => exit(await runBoardAddReady(options, deps)))
   );
   board.addCommand(
     common(new Command("import"))

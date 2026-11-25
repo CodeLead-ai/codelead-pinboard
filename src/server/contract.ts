@@ -85,6 +85,28 @@ export interface EditorInfo {
   repository: string;
 }
 
+/** One thing a card does not say yet that a card in Ready must say (the core's ReadyGap). */
+export interface ReadyGapInfo {
+  what: "done-when" | "may-touch" | "limit";
+  /** The card's fields that say it. */
+  fields: string[];
+  /** The refusal's words for it ("it does not say how to tell it is done (definitionOfDone)"). */
+  words: string;
+}
+
+/**
+ * Ready: the person's column of the cards an agent may pick up by itself; a card goes there only
+ * when it says how to tell it is done, what it may touch and a limit (core/ready.ts).
+ */
+export interface ReadyInfo {
+  /** The column's id, when the board has it; absent on a board made before it. */
+  column?: string;
+  /** The fields a card in Ready says its three things in, by the names the files use. */
+  fields: { doneWhen: string; mayTouch: string; limitMinutes: string; limitMoney: string };
+  /** The command that gives a board without the column its column (`pinboard add-ready`). */
+  command: string;
+}
+
 export interface BoardPayload {
   name: string;
   /** The person the page writes as (board.json's first person). */
@@ -106,6 +128,7 @@ export interface BoardPayload {
   lines: number;
   editor: EditorInfo;
   checkMinutes: number;
+  ready: ReadyInfo;
 }
 
 /** One event as a line the person reads: who did what, when, on which card. */
@@ -236,6 +259,10 @@ export interface EventsPayload {
 export interface RefusalPayload {
   refused: string;
   message: string;
+  /** The Ready check (`refused: "ready"`): the card it is about, when it has an id yet. */
+  card?: CardId;
+  /** The Ready check: each thing the card does not say yet. */
+  missing?: ReadyGapInfo[];
 }
 
 /** The stream's first message, after any events it replays. */
@@ -282,6 +309,8 @@ export interface NewCardInput {
   description?: string;
   tags?: string[];
   relations?: Array<{ kind: string; to: CardId }>;
+  /** The card's fields (a card made in Ready gives the three things a card there says). */
+  fields?: Record<string, unknown>;
 }
 
 /** One theme's choices, by default or for one project (core/themes.ts): each optional in a project, which falls back to the default. */
@@ -338,8 +367,8 @@ export interface BatchInput {
 export interface BatchCardResult {
   id: CardId;
   outcome: "changed" | "unchanged" | "refused";
-  /** The core's refusal of this card's write, and its reason, short ("changed since you read it"). */
-  refused?: { code: string; message: string; reason: string };
+  /** The core's refusal of this card's write, and its reason, short ("changed since you read it"); the Ready check's `missing` too. */
+  refused?: { code: string; message: string; reason: string; missing?: ReadyGapInfo[] };
   /** The card's tile as it is now (after a write that was not refused). */
   summary?: CardSummary;
   events?: EventItem[];

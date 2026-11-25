@@ -1,5 +1,6 @@
 import { agentColumns, intervalMinutes } from "./boardConfig.js";
 import { PRIVATE_NAMES_FILE } from "./guard.js";
+import { DONE_WHEN_FIELD, LIMIT_MINUTES_FIELD, LIMIT_MONEY_FIELD, MAY_TOUCH_FIELD, READY_COLUMN_ID, READY_TAKEN_INTO, readyColumnOf } from "./ready.js";
 import { EVENT_KINDS, type BoardConfig } from "./types.js";
 
 /**
@@ -12,10 +13,13 @@ export function agentsGuide(config: BoardConfig): string {
   // That condition is a convention: no command can see what the person asked in a session.
   const working = agentColumns(config).find((column) => column.id === "in-progress")?.name;
   const personColumns = config.columns.filter((column) => column.owner === "person").map((column) => column.name);
+  // Ready (ready.ts), when the board has it: the person's column too, with its own rule for a move out of it (its section below).
+  const ready = readyColumnOf(config);
+  const leftBy = config.columns.filter((column) => column.owner === "person" && column.id !== ready?.id).map((column) => column.name);
   // A move out of a person's column is a convention too: the person asked for the work in the session, or named the card.
   const asked =
-    personColumns.length > 0
-      ? ` Move a card out of ${listOf(personColumns, "or")} only when the person asked for it in the session (to start the work the person asked for, or to reopen a card the person named): no command can tell, so that rule${working ? `, like the one for ${working},` : ""} is yours to keep.`
+    leftBy.length > 0
+      ? ` Move a card out of ${listOf(leftBy, "or")} only when the person asked for it in the session (to start the work the person asked for, or to reopen a card the person named): no command can tell, so that rule${working ? `, like the one for ${working},` : ""} is yours to keep.`
       : working
         ? " No command can tell whether the person asked for the work, so that rule is yours to keep."
         : "";
@@ -72,17 +76,34 @@ An event with \`data.decided\` is the person's answer to a decision card, record
 - Every change gets its event line, \`by\` you. Times are UTC: \`2026-10-03T00:52:10Z\`.
 
 ## Never
-- Start code work because of a card. Work starts when the person asks for it in the session.
+- Start code work because of a card. Work starts when the person asks for it in the session${ready ? `, or when the person moved the card to ${ready.name}` : ""}.
 - Move a card into ${list(personColumns, "or") || "a person's column"}: ${personColumns.length === 1 ? "that column is" : "those columns are"} the person's.
 - Edit or remove a comment, yours or another's; you only append to the thread.
 - Write secrets (keys, passwords, tokens), names the project keeps private
   (\`${PRIVATE_NAMES_FILE}\`), or paths of your machine (\`<home>/…\`, \`C:\\…\`) into a card. Cite files
   by their path in the repository, or \`<repository>:<path>\` for another repository. The commands refuse such a text, a path that starts with \`~/\` included.
-
+${ready ? `\n${readySection(config)}` : ""}
 ## Work the person asked for
 When it is done: comment with what landed (the commit, the evidence record's id, the files),
 and move the card to ${review}.${done ? ` The person moves it to ${done}.` : ""} A comment that starts with \`Landed:\` fills the task's \`landed\` field (its first line) by itself.
 ${codeleadSection(config)}`);
+}
+
+/**
+ * The section of AGENTS.md on Ready, for a board that has the column (empty otherwise): what the
+ * column means, what a card there says, how an agent takes one, and that an agent never moves a
+ * card into it. `add-ready` prints it for a guide it leaves as it is.
+ */
+export function readySection(config: BoardConfig): string {
+  const ready = readyColumnOf(config);
+  if (!ready) return "";
+  const into = config.columns.find((column) => column.id === READY_TAKEN_INTO)?.name;
+  const take = into
+    ? `Take a card from ${ready.name} by moving it to ${into} before you start; a card tagged \`for:<agent>\` is that agent's alone. Never move a card into ${ready.name}, out of it anywhere but ${into}, or change those fields while it is there: the commands refuse it.`
+    : `Leave its cards where they are: the board has no column to take them into. Never move a card into ${ready.name}, or change those fields while it is there: the commands refuse it.`;
+  return wrapLong(`## ${ready.name}
+${ready.name} is the person's column of the cards an agent may pick up by itself: moving a card there is the person's ask for the work. A card there says how to tell it is done (\`fields.${DONE_WHEN_FIELD}\`), what it may touch (\`fields.${MAY_TOUCH_FIELD}\`) and its limit (\`fields.${LIMIT_MINUTES_FIELD}\`, \`fields.${LIMIT_MONEY_FIELD}\`): keep to them. ${take}
+`);
 }
 
 /** A list in words: "a", "a and b", "a, b and c" (or "or" for the last). */
@@ -101,8 +122,8 @@ function codeleadSection(config: BoardConfig): string {
   const review = config.columns.find((column) => column.id === "for-review")?.name ?? "the review column";
   const personColumns = config.columns.filter((column) => column.owner === "person").map((column) => column.name);
   const never = personColumns.length === 0 ? "a person's column" : personColumns.length === 1 ? personColumns[0]! : `${personColumns.slice(0, -1).join(", ")} or ${personColumns[personColumns.length - 1]}`;
-  // A person's column the queue takes from (Pinned): a tagged card there is taken too.
-  const takenFrom = config.columns.filter((column) => column.owner === "person" && !["in-progress", "for-review", "done"].includes(column.id)).map((column) => column.name);
+  // A person's column the queue takes from (Pinned): a tagged card there is taken too. Not Ready: any agent takes a card out of it into In progress.
+  const takenFrom = config.columns.filter((column) => column.owner === "person" && !["in-progress", "for-review", "done", READY_COLUMN_ID].includes(column.id)).map((column) => column.name);
   const outOf = takenFrom.length === 0 ? "" : ` (out of ${listOf(takenFrom, "or")} too)`;
   return wrapLong(`
 ## CodeLead on the board

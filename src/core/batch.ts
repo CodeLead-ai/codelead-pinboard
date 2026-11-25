@@ -1,5 +1,6 @@
 import { createCards, parseCardId, type BoardContext, type NewCardInput } from "./board.js";
 import { BoardRefusal } from "./errors.js";
+import { READY_FIELDS } from "./ready.js";
 import { fencedLines, splitText, withArticle } from "./text.js";
 import { TYPE_FIELDS, type BoardEvent, type Card, type CardId } from "./types.js";
 import { parseYamlMapping, YamlError, type YamlMap, type YamlValue } from "./yaml.js";
@@ -128,10 +129,10 @@ function readCard(lines: string[], start: number, end: number, source: string, d
   const fields = given("fields");
   if (fields !== undefined) {
     if (!isMap(fields)) fail(`its "fields" must be a mapping of the type's fields, and is ${JSON.stringify(fields)}`);
-    // The type's own fields only, as `new --field` takes them: a typo is refused, not written as a field of its own.
+    // The type's own fields only, and the fields any card carries for Ready, as `new --field` takes them: a typo is refused, not written as a field of its own.
     const known = TYPE_FIELDS[type];
     for (const name of Object.keys(fields)) {
-      if (known && !known.includes(name)) fail(known.length === 0 ? `${withArticle(type)} has no fields; "${name}" is not one` : `"${name}" is not a field of ${withArticle(type)} (${known.join(", ")})`);
+      if (known && !known.includes(name) && !READY_FIELDS.includes(name)) fail(known.length === 0 ? `${withArticle(type)} has no fields; "${name}" is not one` : `"${name}" is not a field of ${withArticle(type)} (${known.join(", ")})`);
     }
   }
 
