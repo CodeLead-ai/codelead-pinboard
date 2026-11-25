@@ -1,4 +1,4 @@
-import type { BoardPayload, CardId, CardSummary, ColumnInfo } from "../../server/contract.js";
+import type { BoardPayload, CardId, CardSummary, ClaimInfo, ColumnInfo, WaitInfo } from "../../server/contract.js";
 
 export const FOR_CODELEAD_TAG = "for:codelead";
 
@@ -324,6 +324,26 @@ export function clock(at: string, now: number): string {
   const today = new Date(now);
   if (date.getUTCFullYear() === today.getUTCFullYear() && date.getUTCMonth() === today.getUTCMonth() && date.getUTCDate() === today.getUTCDate()) return hhmm;
   return `${MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}${date.getUTCFullYear() !== today.getUTCFullYear() ? `, ${date.getUTCFullYear()}` : ""} · ${hhmm}`;
+}
+
+/**
+ * A claimed card's line on its tile, from its lease: "held by Claude Code · 24 min left", or, once
+ * its time passed, "the claim of Claude Code ran out" (the next take returns the card to Ready).
+ */
+export function claimLine(board: BoardPayload, claim: ClaimInfo, now: number): { text: string; ranOut: boolean } {
+  const name = participantName(board, claim.by);
+  const until = Date.parse(claim.until);
+  const minutes = Math.ceil((until - now) / 60_000);
+  if (Number.isNaN(until) || minutes <= 0) return { text: `the claim of ${name} ran out`, ranOut: true };
+  const left = minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h${minutes % 60 > 0 ? ` ${minutes % 60} min` : ""}`;
+  return { text: `held by ${name} · ${left} left`, ranOut: false };
+}
+
+/** A Ready card's reason to wait, while it holds: past its `until` (the claims it rests on ran out) the next take may give the card. */
+export function waitLine(wait: WaitInfo | undefined, now: number): string | undefined {
+  if (wait === undefined) return undefined;
+  if (wait.until !== undefined && Date.parse(wait.until) <= now) return undefined;
+  return wait.line;
 }
 
 /** A time to the second, UTC, as the board writes it. */

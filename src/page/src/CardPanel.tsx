@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
-import type { BoardPayload, CardChangesInput, CardColor, CardDetail } from "../../server/contract.js";
+import type { BoardPayload, CardChangesInput, CardColor, CardDetail, EventItem } from "../../server/contract.js";
 import { DecidedEditor, EditableList, EditableText, GrowingText, PreviewModes, PreviewPane, SizePicker, TagEditor, usePreviewMode, type Decided } from "./Editors.js";
 import { ActivityIcon, ArchiveIcon, ChevronDown, ChevronLeft, CloseIcon, FileIcon, TypeChip } from "./icons.js";
 import { Markdown } from "./Markdown.js";
-import { ago, classes, clock, columnName, FIELD_LABELS, hasReadyFields, isAgent, LIST_FIELDS, MARKDOWN_FIELDS, participantName, plural, readyFieldNames, RELATION_WORDS, type ReadyRefusal } from "./model.js";
+import { ago, claimLine, classes, clock, columnName, FIELD_LABELS, hasReadyFields, isAgent, LIST_FIELDS, MARKDOWN_FIELDS, participantName, plural, readyFieldNames, RELATION_WORDS, type ReadyRefusal } from "./model.js";
 import { ReadyCheck, ReadyFields } from "./Ready.js";
 
 /** A decision's ask is shown at the top of its panel, not among the decision's other fields. */
@@ -272,6 +272,18 @@ export function CardPanel({ board, id, detail, error, below, crumbs, cards, know
                   </time>
                 </dd>
               </div>
+              {card.claim ? (
+                <div className="wide" data-testid="panel-claim">
+                  <dt>Held by</dt>
+                  <dd>
+                    {participantName(board, card.claim.by)}
+                    {" · "}
+                    <time dateTime={card.claim.until} title={card.claim.until}>
+                      {claimLine(board, card.claim, now).ranOut ? `its claim ran out at ${clock(card.claim.until, now)}` : `until ${clock(card.claim.until, now)}`}
+                    </time>
+                  </dd>
+                </div>
+              ) : null}
               <div>
                 <dt>Status</dt>
                 <dd>
@@ -473,7 +485,20 @@ export function CardPanel({ board, id, detail, error, below, crumbs, cards, know
             <Section title={`Thread (${card.thread.length})`} testId="panel-thread">
               {card.thread.length === 0 ? <p className="empty-words">No comments yet. Write the first one below; an agent sees it on its next check.</p> : null}
               <ol className="thread">
-                {card.thread.map((comment, index) => {
+                {threadItems(card.thread, detail.activity).map((item, index) => {
+                  if (item.event) {
+                    // A claim's event, in plain words, where it happened among the comments.
+                    const event = item.event;
+                    return (
+                      <li key={`event-${event.position ?? index}`} className="thread-event" data-testid="thread-event">
+                        <b>{event.byName}</b> {event.text}
+                        <time dateTime={event.at} title={event.at}>
+                          {clock(event.at, now)}
+                        </time>
+                      </li>
+                    );
+                  }
+                  const comment = item.comment!;
                   const agent = isAgent(board, comment.author);
                   const name = participantName(board, comment.author);
                   return (
@@ -531,6 +556,23 @@ export function CardPanel({ board, id, detail, error, below, crumbs, cards, know
       </div>
     </aside>
   );
+}
+
+/**
+ * The thread as the panel shows it: the comments, and between them the events of the card's claims
+ * (given from Ready, renewed, given back, ran out, ended), each where it happened; a comment written in
+ * the same second as an event comes first (a release's reason, then the release).
+ */
+function threadItems(thread: Array<{ author: string; at: string; body: string }>, activity: EventItem[]): Array<{ comment?: { author: string; at: string; body: string }; event?: EventItem }> {
+  const events = activity.filter((event) => event.kind.startsWith("claim.")).reverse();
+  const items: Array<{ comment?: { author: string; at: string; body: string }; event?: EventItem }> = [];
+  let next = 0;
+  for (const comment of thread) {
+    while (next < events.length && Date.parse(events[next]!.at) < Date.parse(comment.at)) items.push({ event: events[next++]! });
+    items.push({ comment });
+  }
+  while (next < events.length) items.push({ event: events[next++]! });
+  return items;
 }
 
 /**

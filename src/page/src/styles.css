@@ -4664,6 +4664,35 @@ dialog.confirm .bulk-hint {
   color: var(--muted);
   font-size: 12px;
 }
+/* A claimed card: who holds it and how long is left; past its time, said in the danger colour. */
+.tile-claim {
+  margin: 4px 0 0;
+  padding-left: 6px;
+  border-left: 2px solid var(--line-2);
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.tile-claim-out {
+  border-left-style: dashed;
+  border-left-color: var(--danger);
+  color: var(--danger);
+}
+/* A card in Ready that would not be given now: why, in one line. */
+.tile-wait {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+/* A claim's events in the card's thread, between the comments. */
+.thread-event {
+  padding-left: 40px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.thread-event time {
+  margin-left: 6px;
+  font: 500 11.5px/1 var(--font-mono);
+}
 .tile-not-ready {
   margin: 4px 0 0;
   padding-left: 6px;

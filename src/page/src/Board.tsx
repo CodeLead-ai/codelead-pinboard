@@ -7,6 +7,7 @@ import {
   ago,
   agoShort,
   askLine,
+  claimLine,
   classes,
   colorNameOf,
   COLUMN_NOTES,
@@ -21,6 +22,7 @@ import {
   matches,
   onBoard,
   participantName,
+  waitLine,
   waitsForDecision,
   type Filter,
   type ReadyRefusal
@@ -333,7 +335,10 @@ function Tile({ board, card, faded, selected, picked, tabStop, unseen, addressed
   const outcomeTitle = card.outcome
     ? `Decided${card.outcome.by ? ` by ${participantName(board, card.outcome.by)}` : ""}${card.outcome.on ? ` on ${card.outcome.on}` : ""}${outcome?.cut ? "; the answer goes on in the card" : ""}`
     : undefined;
-  const describedBy = [ask || askMissing ? `ask-${key}` : "", outcome ? `decided-${key}` : ""].filter((id) => id !== "").join(" ");
+  // A claimed card: who holds it and how long is left (or that it ran out); a card in Ready: what keeps it from being given now.
+  const claim = card.claim ? claimLine(board, card.claim, now) : undefined;
+  const wait = card.column === board.ready.column ? waitLine(card.wait, now) : undefined;
+  const describedBy = [ask || askMissing ? `ask-${key}` : "", outcome ? `decided-${key}` : "", claim ? `claim-${key}` : "", wait ? `wait-${key}` : ""].filter((id) => id !== "").join(" ");
   return (
     <article
       ref={register}
@@ -421,6 +426,16 @@ function Tile({ board, card, faded, selected, picked, tabStop, unseen, addressed
         </p>
       ) : null}
       {card.status ? <p className="tile-status">{card.status}</p> : null}
+      {claim ? (
+        <p id={`claim-${key}`} className={classes("tile-claim", claim.ranOut && "tile-claim-out")} title={`Claim until ${card.claim!.until}`} data-testid="tile-claim">
+          {claim.text}
+        </p>
+      ) : null}
+      {wait ? (
+        <p id={`wait-${key}`} className="tile-wait" title={card.wait!.words} data-testid="tile-wait">
+          {wait}
+        </p>
+      ) : null}
       {notReady ? (
         <p className="tile-not-ready" data-testid="tile-not-ready">
           Cannot go to {board.ready.column ? columnName(board, board.ready.column) : "Ready"} yet: open it to fill in what is missing.
