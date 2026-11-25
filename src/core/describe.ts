@@ -1,5 +1,6 @@
 import { decisionOf } from "./events.js";
 import type { BoardConfig, BoardEvent, Decision } from "./types.js";
+import { checkedRule, ruleWords, type ScheduleRule } from "./when.js";
 
 /** A decision in words, as the check and the notifications say it: "decided: <option> (by <who>, <day>)". */
 export function describeDecision(decision: Decision): string {
@@ -18,7 +19,8 @@ export function describeEvent(event: BoardEvent, config?: BoardConfig): string {
   switch (event.kind) {
     case "item.created": {
       if (data.synthesized) return "created it by writing its file, with no event";
-      const created = `created it${data.type ? ` (${String(data.type)}${data.column ? ` in ${column(data.column)}` : ""})` : ""}`;
+      // A card a schedule made (schedules.ts): by the schedule, the ask of its person (the event's `by`).
+      const created = `created it${typeof data.schedule === "string" ? ` by the schedule ${data.schedule}` : ""}${data.type ? ` (${String(data.type)}${data.column ? ` in ${column(data.column)}` : ""})` : ""}`;
       // Created with its decision (by a person): the decision is said too.
       const decision = decisionOf(event);
       return decision ? `${created}; ${describeDecision(decision)}` : created;
@@ -74,9 +76,47 @@ export function describeEvent(event: BoardEvent, config?: BoardConfig): string {
       const why = data.archived === true ? "archived" : `it moved to ${column(data.to)}`;
       return data.holder === event.by ? `ended its claim (${why})` : `ended the claim of ${String(data.holder)} (${why})`;
     }
+    // A schedule (schedules.ts): the person's standing ask, which puts a card in Ready at its times.
+    case "schedule.added": {
+      const rule = ruleOf(data.rule);
+      return `made the schedule ${String(data.schedule)}${rule ? `: ${ruleWords(rule)}${typeof data.zone === "string" ? ` (${data.zone})` : ""}` : ""}`;
+    }
+    case "schedule.changed": {
+      const parts = Array.isArray(data.changed) ? (data.changed as unknown[]).map((part) => (part === "card" ? "its card" : `its ${String(part)}`)) : [];
+      const rule = ruleOf(data.rule);
+      return `changed the schedule ${String(data.schedule)}${parts.length > 0 ? ` (${parts.join(", ")})` : ""}${rule ? `: ${ruleWords(rule)}${typeof data.zone === "string" ? ` (${data.zone})` : ""}` : ""}`;
+    }
+    case "schedule.paused":
+      return `paused the schedule ${String(data.schedule)}`;
+    case "schedule.resumed":
+      return `resumed the schedule ${String(data.schedule)}`;
+    case "schedule.removed":
+      return `removed the schedule ${String(data.schedule)}`;
+    case "schedule.ran":
+      return `had the schedule ${String(data.schedule)} put it in ${column("ready")} (due ${String(data.due)})`;
+    case "schedule.skipped": {
+      const why = data.why === "open" ? `#${String(data.open)} is still open` : `the board refused its card (${String(data.refused ?? "")})`;
+      return `had the schedule ${String(data.schedule)} due at ${String(data.due)}: no new card, as ${why}`;
+    }
     default:
       return event.kind;
   }
+}
+
+/** A rule an event carries, when it reads as one. */
+function ruleOf(value: unknown): ScheduleRule | undefined {
+  if (value === undefined) return undefined;
+  try {
+    return checkedRule(value);
+  } catch {
+    return undefined;
+  }
+}
+
+/** The card a schedule made and its run: its `item.created`, then the `schedule.ran` of the same card, by the same person at the same time. */
+function runOfCreation<T extends BoardEvent>(created: T | undefined, next: T | undefined): T | undefined {
+  if (!created || !next || created.kind !== "item.created" || next.kind !== "schedule.ran" || typeof created.data?.schedule !== "string") return undefined;
+  return String(created.item) === String(next.item) && created.at === next.at && created.by === next.by ? next : undefined;
 }
 
 /** The claim event a move belongs to: the move of a take, a release or an ended lease (`data.withClaim`), then its claim event, by the same participant at the same time. */
@@ -119,11 +159,18 @@ export function describeCommentAndMove(comment: BoardEvent, move: BoardEvent, co
  * Events as the lines a person reads, in the order given: each event its own line, except that a
  * comment and a move written in one step are one line, and so are the move of a claim and its claim
  * event ("was given it from Ready: holds it until …"), with the comment of a release ("gave it back
- * to Ready: <the reason's first words>").
+ * to Ready: <the reason's first words>"), and so are a card a schedule made and its run ("created it
+ * by the schedule check-deps (task in Ready), due …").
  */
 export function eventLines<T extends BoardEvent>(events: T[], config?: BoardConfig): Array<{ events: T[]; text: string }> {
   const lines: Array<{ events: T[]; text: string }> = [];
   for (let index = 0; index < events.length; index += 1) {
+    const run = runOfCreation(events[index], events[index + 1]);
+    if (run) {
+      lines.push({ events: [events[index]!, run], text: `${describeEvent(events[index]!, config)}, due ${String(run.data?.due)}` });
+      index += 1;
+      continue;
+    }
     const pair = commentAndMove(events[index]!, events[index + 1]);
     const claim = claimOfMove(pair?.move ?? events[index], pair ? events[index + 2] : events[index + 1]);
     if (pair && claim) {

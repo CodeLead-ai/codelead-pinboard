@@ -577,7 +577,7 @@ describe("validation names every problem of every file", () => {
       { file: "items/0001-good.md", message: "the id 1 is also the id of items/0001-twin.md" },
       { file: "items/0001-twin.md", message: "the id 1 is also the id of items/0001-good.md" },
       { file: "events.jsonl", message: "line 2 is not JSON" },
-      { file: "events.jsonl", message: 'line 3: "item.renamed" is not an event kind (item.created, item.updated, item.moved, item.archived, item.unarchived, comment.added, relation.added, relation.removed, tag.added, tag.removed, attachment.added, claim.taken, claim.renewed, claim.released, claim.expired, claim.ended)' },
+      { file: "events.jsonl", message: 'line 3: "item.renamed" is not an event kind (item.created, item.updated, item.moved, item.archived, item.unarchived, comment.added, relation.added, relation.removed, tag.added, tag.removed, attachment.added, claim.taken, claim.renewed, claim.released, claim.expired, claim.ended, schedule.added, schedule.changed, schedule.paused, schedule.resumed, schedule.removed, schedule.ran, schedule.skipped)' },
       { file: "events.jsonl", message: 'line 3: "ghost" is not a participant of the board' },
       { file: "cursors/someone.json", message: '"someone" is not a participant of the board' },
       { file: "cursors/someone.json", message: '"seen" must be a UTC time, and is "later"' }

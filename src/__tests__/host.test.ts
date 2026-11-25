@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createBoardCommand, type BoardLog } from "../cli/index.js";
 import { BoardSanitizer, boardContext, initBoard, type SanitizerFactory } from "../core/index.js";
 
-const COMMANDS = ["init", "check", "list", "show", "new", "reply", "move", "set", "take", "renew", "release", "archive", "unarchive", "validate", "add-ready", "import", "tidy", "serve"];
+const COMMANDS = ["init", "check", "list", "show", "new", "reply", "move", "set", "take", "renew", "release", "archive", "unarchive", "validate", "add-ready", "import", "tidy", "schedules", "serve"];
 
 const roots: string[] = [];
 let exitCode: typeof process.exitCode;

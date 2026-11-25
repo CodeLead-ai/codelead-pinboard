@@ -24,6 +24,16 @@ import {
   updateCard,
   workspaceOf,
   writePreferences,
+  addSchedule,
+  bothWords,
+  changeSchedule,
+  listSchedules,
+  pauseSchedule,
+  removeSchedule,
+  resumeSchedule,
+  runSchedules,
+  type ScheduleChanges,
+  type ScheduleRun,
   type BoardContext,
   type BulkOperation,
   type CardChanges,
@@ -34,7 +44,19 @@ import {
   type WriteResult,
   type YamlValue
 } from "../core/index.js";
-import type { BatchCardResult, BatchOperationName, BatchPayload, EditorInfo, EventsPayload, PreferencesPayload, ReadyGapInfo, RefusalPayload, WritePayload } from "./contract.js";
+import type {
+  BatchCardResult,
+  BatchOperationName,
+  BatchPayload,
+  EditorInfo,
+  EventsPayload,
+  PreferencesPayload,
+  ReadyGapInfo,
+  RefusalPayload,
+  SchedulesPayload,
+  ScheduleWritePayload,
+  WritePayload
+} from "./contract.js";
 import { editorInfo } from "./editor.js";
 import { PageFiles } from "./page.js";
 import { BoardStream } from "./stream.js";
@@ -79,6 +101,22 @@ export interface BoardServerOptions {
   log?: (line: string) => void;
   /** The words a person types for the board's commands (`pinboard`, a host's `codelead board`), for what the page says to run; `pinboard` when not given. */
   command?: string;
+  /** This machine's time zone, which a schedule made on the page writes down; the system's when not given. */
+  zone?: string;
+  /**
+   * How often, while the process listens, it makes the cards of the schedules that are due (the
+   * core's `runSchedules`), in ms; once at its start too. Default 60 s; 0: never (a host that runs
+   * them itself).
+   */
+  schedulesEveryMs?: number;
+  /** The timer the schedules run on: Node's setInterval and clearInterval when not given (tests give their own, driven by their clock). */
+  timers?: ScheduleTimers;
+}
+
+/** A repeating timer: what the page's process runs the schedules with. */
+export interface ScheduleTimers {
+  setInterval(run: () => void, ms: number): unknown;
+  clearInterval(handle: unknown): void;
 }
 
 export interface BoardServer {
@@ -89,7 +127,15 @@ export interface BoardServer {
   /** Listens on 127.0.0.1 (port 0: a free port the system picks). */
   listen(port?: number): Promise<{ url: string; port: number }>;
   close(): Promise<void>;
+  /**
+   * Makes the cards of the schedules that are due now, as the timer does (and as `pinboard schedules
+   * run` does), says in the process's log what it made, and tells the open pages; returns what it did.
+   */
+  runSchedules(): ScheduleRun;
 }
+
+/** How often the page's process runs the schedules that are due, when it is not told. */
+export const DEFAULT_SCHEDULES_EVERY_MS = 60_000;
 
 const MAX_BODY = 2 * 1024 * 1024;
 
@@ -372,7 +418,8 @@ export function createBoardServer(options: BoardServerOptions): BoardServer {
     ...(options.root ? { root: options.root } : {}),
     ...(options.home ? { home: options.home } : {}),
     ...(options.now ? { now: options.now } : {}),
-    ...(options.sanitizer ? { sanitizer: options.sanitizer } : {})
+    ...(options.sanitizer ? { sanitizer: options.sanitizer } : {}),
+    ...(options.zone ? { zone: options.zone } : {})
   });
   const log = options.log ?? ((line: string) => console.error(line));
   // A board that cannot be served is refused now, in the core's words: no board.json, or no person.
@@ -391,6 +438,56 @@ export function createBoardServer(options: BoardServerOptions): BoardServer {
   let port: number | undefined;
 
   const person = (): string => personOf(readBoardConfig(ctx.dir).config).id;
+
+  // The schedules (core/schedules.ts): while the process listens, it makes the cards of those that are due, once at its
+  // start and then on its timer, and says in its log what it made. It makes them through the core, as the command does.
+  const timers: ScheduleTimers = options.timers ?? { setInterval: (run, ms) => setInterval(run, ms), clearInterval: (handle) => clearInterval(handle as NodeJS.Timeout) };
+  const every = options.schedulesEveryMs ?? DEFAULT_SCHEDULES_EVERY_MS;
+  let scheduleTimer: unknown;
+  let lastFailure = "";
+  const schedules = (): ScheduleRun => {
+    const result = runSchedules(ctx);
+    for (const entry of result.entries) if (entry.outcome !== "held") log(`Pinboard: ${entry.words}`);
+    if (result.events.length > 0) {
+      stream.scan();
+      stream.tell("schedules", {});
+    }
+    return result;
+  };
+  /** The timer's run: a board another writer holds is tried at the next tick; any other failure is said once, until it changes. */
+  const scheduledRun = (): void => {
+    try {
+      schedules();
+      lastFailure = "";
+    } catch (error) {
+      if (isBoardRefusal(error) && error.code === "busy") return;
+      const message = error instanceof Error ? error.message : String(error);
+      if (message !== lastFailure) log(`Pinboard: the schedules could not run: ${message}`);
+      lastFailure = message;
+    }
+  };
+  const scheduleWritten = (result: { name?: string; schedule?: { name: string; zone: string }; file: string; next?: string; events: Parameters<typeof eventItem>[0][] }, status = 200, dryRun = false): Reply => {
+    const { config } = readBoardConfig(ctx.dir);
+    if (!dryRun) {
+      stream.scan();
+      stream.tell("schedules", {});
+    }
+    const payload: ScheduleWritePayload = {
+      name: result.schedule?.name ?? result.name ?? "",
+      file: result.file,
+      ...(result.next ? { next: result.next, ...(result.schedule ? { nextWords: bothWords(Date.parse(result.next), result.schedule.zone) } : {}) } : {}),
+      events: dryRun ? [] : result.events.map((event) => eventItem(event, config)),
+      ...(dryRun ? { dryRun: true } : {})
+    };
+    return { status, body: payload };
+  };
+  const scheduleName = (text: string): string => {
+    try {
+      return decodeURIComponent(text);
+    } catch {
+      return text;
+    }
+  };
 
   /** A write's answer: the card as it is now, its tile, the events it appended. The stream tells the other pages. */
   const written = (result: WriteResult, status = 200): Reply => {
@@ -520,6 +617,73 @@ export function createBoardServer(options: BoardServerOptions): BoardServer {
       run: (match, _url, body) =>
         written(releaseCard(ctx, cardIdOf(match[1]!), { as: requiredText(body, "as", "agent that holds the card (as)"), reason: requiredText(body, "reason", "reason the card goes back (reason)") }))
     },
+    // The schedules (core/schedules.ts): the list, and the person's own writes (the page writes as the board's person).
+    {
+      method: "GET",
+      pattern: /^\/api\/schedules$/,
+      run: () => {
+        const payload: SchedulesPayload = { ...listSchedules(ctx), command: `${options.command ?? "pinboard"} add-ready` };
+        return { status: 200, body: payload };
+      }
+    },
+    {
+      method: "POST",
+      pattern: /^\/api\/schedules$/,
+      run: (_match, _url, body) => {
+        const card = body.card;
+        if (typeof card !== "object" || card === null || Array.isArray(card)) throw usage("Refused: the request has no card for the schedule ({ card: { type, title, … } }); nothing was written.");
+        const input = card as Body;
+        const tags = textList(input, "tags", "the card's tags");
+        const given = fieldsOf(input.fields);
+        const fields = given ? (Object.fromEntries(Object.entries(given).filter(([, value]) => value !== null)) as Record<string, YamlValue>) : undefined;
+        const description = optionalText(input, "description", "the card's description");
+        const zone = optionalText(body, "zone", "the zone");
+        const dryRun = body.dryRun === true;
+        const result = addSchedule(
+          ctx,
+          person(),
+          {
+            name: requiredText(body, "name", "schedule's name (name)"),
+            rule: body.rule,
+            ...(zone !== undefined ? { zone } : {}),
+            card: { type: requiredText(input, "type", "card's type"), title: requiredText(input, "title", "card's title"), ...(description !== undefined ? { description } : {}), ...(tags ? { tags } : {}), ...(fields ? { fields } : {}) }
+          },
+          { dryRun }
+        );
+        return scheduleWritten(result, dryRun ? 200 : 201, dryRun);
+      }
+    },
+    {
+      method: "PUT",
+      pattern: /^\/api\/schedules\/([^/]+)$/,
+      run: (match, _url, body) => {
+        const changes: ScheduleChanges = {};
+        if (body.rule !== undefined) changes.rule = body.rule;
+        for (const key of ["zone", "type", "title", "description"] as const) {
+          const value = optionalText(body, key, `the ${key}`);
+          if (value !== undefined) changes[key] = value;
+        }
+        const addTags = textList(body, "addTags", "addTags");
+        if (addTags) changes.addTags = addTags;
+        const removeTags = textList(body, "removeTags", "removeTags");
+        if (removeTags) changes.removeTags = removeTags;
+        const fields = fieldsOf(body.fields);
+        if (fields) changes.fields = fields;
+        return scheduleWritten(changeSchedule(ctx, person(), scheduleName(match[1]!), changes));
+      }
+    },
+    {
+      method: "POST",
+      pattern: /^\/api\/schedules\/([^/]+)\/(pause|resume|remove)$/,
+      run: (match) => {
+        const name = scheduleName(match[1]!);
+        const as = person();
+        if (match[2] === "remove") return scheduleWritten(removeSchedule(ctx, as, name));
+        return scheduleWritten(match[2] === "pause" ? pauseSchedule(ctx, as, name) : resumeSchedule(ctx, as, name));
+      }
+    },
+    // For a host (a desktop app) that runs the schedules itself, and for whoever wants them run now: the same function as the timer's.
+    { method: "POST", pattern: /^\/api\/schedules\/run$/, run: () => ({ status: 200, body: schedules() }) },
     {
       method: "GET",
       pattern: /^\/api\/preferences$/,
@@ -676,11 +840,20 @@ export function createBoardServer(options: BoardServerOptions): BoardServer {
           server = created;
           port = (created.address() as AddressInfo).port;
           stream.start();
+          // The schedules: what is due now (a time missed while nothing ran included), then on the timer.
+          if (every > 0) {
+            scheduledRun();
+            scheduleTimer = timers.setInterval(scheduledRun, every);
+            (scheduleTimer as { unref?: () => void } | undefined)?.unref?.();
+          }
           resolve({ url: `http://127.0.0.1:${port}/`, port });
         });
       }),
+    runSchedules: schedules,
     close: () =>
       new Promise((resolve) => {
+        if (scheduleTimer !== undefined) timers.clearInterval(scheduleTimer);
+        scheduleTimer = undefined;
         stream.close();
         if (!server) {
           resolve();

@@ -73,8 +73,10 @@ import {
   type Claim,
   type Comment,
   type Cursor,
-  type Participant
+  type Participant,
+  type ScheduledBy
 } from "./types.js";
+import { readSchedules } from "./scheduleFiles.js";
 import { sameValue, type YamlMap, type YamlValue } from "./yaml.js";
 
 /**
@@ -113,6 +115,8 @@ export interface BoardOptions {
   now?: () => Date;
   /** Makes the sanitizer the guard finds secrets and machine paths with; the board's own (sanitize.ts) when not given. */
   sanitizer?: SanitizerFactory;
+  /** This machine's time zone (an IANA name), which a schedule made now writes down; the system's when not given. */
+  zone?: string;
 }
 
 export interface BoardContext {
@@ -122,6 +126,8 @@ export interface BoardContext {
   now: () => Date;
   /** The host's sanitizer (BoardOptions.sanitizer); the board's own when absent. */
   sanitizer?: SanitizerFactory;
+  /** This machine's time zone (BoardOptions.zone); the system's when absent. */
+  zone?: string;
 }
 
 export interface WriteResult {
@@ -151,7 +157,14 @@ export function boardContext(options: BoardOptions): BoardContext {
   const dir = path.resolve(options.dir);
   let root = options.root ? path.resolve(options.root) : findRepositoryRoot(dir);
   if (!root) root = dir.split(path.sep).slice(-3).join("/") === BOARD_FOLDER ? path.resolve(dir, "..", "..", "..") : dir;
-  return { dir, root, home: options.home ?? os.homedir(), now: options.now ?? (() => new Date()), ...(options.sanitizer ? { sanitizer: options.sanitizer } : {}) };
+  return {
+    dir,
+    root,
+    home: options.home ?? os.homedir(),
+    now: options.now ?? (() => new Date()),
+    ...(options.sanitizer ? { sanitizer: options.sanitizer } : {}),
+    ...(options.zone ? { zone: options.zone } : {})
+  };
 }
 
 function scopeOf(ctx: BoardContext, config: BoardConfig): GuardScope {
@@ -665,6 +678,8 @@ export interface NewCardInput {
   color?: string;
   /** More for the `item.created` event's data (where the card came from). */
   eventData?: Record<string, unknown>;
+  /** The schedule that makes the card (its front-matter key `schedule`). Internal: only the board's schedules give it (schedules.ts). */
+  schedule?: ScheduledBy;
 }
 
 /** Who writes now, as a decision written without its `by` or `on` records them: the writer, today (UTC). */
@@ -838,6 +853,7 @@ export function createCards(ctx: BoardContext, as: string, inputs: NewCardInput[
         fields: checkedFields(input.fields ?? {}, decisionWriter(config, as, now)),
         ...(input.session !== undefined ? { session: oneLine(input.session, "the session") } : {}),
         ...(status !== undefined ? { status } : {}),
+        ...(input.schedule !== undefined ? { schedule: { name: input.schedule.name, by: input.schedule.by, due: input.schedule.due } } : {}),
         extra: {},
         description,
         thread: []
@@ -1581,6 +1597,8 @@ export interface ValidationResult {
   cards: number;
   events: number;
   cursors: number;
+  /** The files of `schedules/`, when the board has any (schedules.ts). */
+  schedules?: number;
 }
 
 /**
@@ -1614,6 +1632,8 @@ export function cardProblemsOnBoard(card: Card, config: BoardConfig, ids: Set<st
   if (ready !== undefined && card.column === ready.id && card.archived === undefined) for (const gap of readyGaps(card.fields)) problems.push(`the card is in ${ready.name}, and ${gap.words}`);
   // A claim (claim.ts) lives on a card in In progress, and is an agent's of the board.
   problems.push(...claimFindings(card, config).problems);
+  // A card a schedule made is the ask of the schedule's person (schedules.ts).
+  if (card.schedule !== undefined && !participants.includes(card.schedule.by)) problems.push(`the schedule ${card.schedule.name} that made the card is by "${card.schedule.by}", who is not a participant of the board (${participants.join(", ")})`);
   if (card.id !== "" && !fileNameFitsId(path.posix.basename(card.file), card.id)) {
     problems.push(`the file's name does not begin with the card's id (${cardFileName(card.id, "…")})`);
   }
@@ -1697,5 +1717,17 @@ export function validateBoard(ctx: BoardContext): ValidationResult {
   } catch {
     // No cursors folder: nobody has checked yet on this machine.
   }
-  return { problems, ...(notes.length > 0 ? { notes } : {}), cards: items.length, events: count, cursors };
+
+  // The schedules (schedules.ts): each file readable, made by a person of the board, its card of a type the board has.
+  const schedules = readSchedules(ctx.dir);
+  for (const loaded of schedules) {
+    for (const message of loaded.problems) problems.push({ file: loaded.file, message });
+    const schedule = loaded.schedule;
+    if (!schedule) continue;
+    const maker = config.participants.find((participant) => participant.id === schedule.made.by);
+    if (!maker) problems.push({ file: loaded.file, message: `it was made by "${schedule.made.by}", who is not a participant of the board; it makes no card until a person makes it again` });
+    else if (maker.kind !== "person") problems.push({ file: loaded.file, message: `it was made by ${maker.id}, an agent; a schedule is a person's, and it makes no card` });
+    if (!config.types.includes(schedule.card.type)) problems.push({ file: loaded.file, message: `its card's type "${schedule.card.type}" is not a card type of the board (${config.types.join(", ")})` });
+  }
+  return { problems, ...(notes.length > 0 ? { notes } : {}), cards: items.length, events: count, cursors, ...(schedules.length > 0 ? { schedules: schedules.length } : {}) };
 }

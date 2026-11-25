@@ -1,6 +1,6 @@
 import { cardColorOf, colorWords } from "./marks.js";
 import { fencedLines, isIsoTime, joinText, splitText, trimBlankLines, type Eol } from "./text.js";
-import { ASK_FIELD, type Attachment, type CardData, type CardId, type Claim, type Comment, type Relation } from "./types.js";
+import { ASK_FIELD, type Attachment, type CardData, type CardId, type Claim, type Comment, type Relation, type ScheduledBy } from "./types.js";
 import {
   formatEntry,
   formatFlow,
@@ -24,7 +24,7 @@ import {
  * Writes are surgical: a changed key's lines are replaced and every other byte of the file stays
  * as it was (unknown keys, comments in the front matter, the line endings, a byte-order mark).
  */
-export const KNOWN_KEYS = ["id", "type", "title", "column", "tags", "color", "author", "created", "updated", "relations", "attachments", "fields", "session", "status", "archived", "claim"] as const;
+export const KNOWN_KEYS = ["id", "type", "title", "column", "tags", "color", "author", "created", "updated", "relations", "attachments", "fields", "session", "status", "archived", "claim", "schedule"] as const;
 export type KnownKey = (typeof KNOWN_KEYS)[number];
 export const REQUIRED_KEYS: readonly KnownKey[] = ["id", "type", "title", "column", "author", "created", "updated"];
 
@@ -239,6 +239,13 @@ export function parseCardText(raw: string): { card?: CardData; problems: string[
     if (isMap(value) && typeof value.by === "string" && ID_TEXT.test(value.by) && isIsoTime(value.since) && isIsoTime(value.until)) claim = { by: value.by, since: value.since, until: value.until };
     else problems.push(`"claim" must be { by: <agent>, since: <UTC time>, until: <UTC time> }, and is ${JSON.stringify(value)}`);
   }
+  // The schedule that made the card (schedules.ts): its name, whose it is, the time it was due.
+  let schedule: ScheduledBy | undefined;
+  if (map.schedule !== undefined && map.schedule !== null) {
+    const value = map.schedule;
+    if (isMap(value) && typeof value.name === "string" && ID_TEXT.test(value.name) && typeof value.by === "string" && ID_TEXT.test(value.by) && isIsoTime(value.due)) schedule = { name: value.name, by: value.by, due: value.due };
+    else problems.push(`"schedule" must be { name: <schedule>, by: <person>, due: <UTC time> }, and is ${JSON.stringify(value)}`);
+  }
 
   const extra: YamlMap = {};
   for (const key of Object.keys(map)) {
@@ -267,6 +274,7 @@ export function parseCardText(raw: string): { card?: CardData; problems: string[
     ...(status !== undefined ? { status } : {}),
     ...(archived !== undefined ? { archived } : {}),
     ...(claim !== undefined ? { claim } : {}),
+    ...(schedule !== undefined ? { schedule } : {}),
     extra,
     description,
     thread: thread.comments
@@ -287,6 +295,8 @@ function knownValue(key: KnownKey, card: CardData): YamlValue | undefined {
       return card.fields;
     case "claim":
       return card.claim === undefined ? undefined : { by: card.claim.by, since: card.claim.since, until: card.claim.until };
+    case "schedule":
+      return card.schedule === undefined ? undefined : { name: card.schedule.name, by: card.schedule.by, due: card.schedule.due };
     default:
       return card[key];
   }
@@ -323,6 +333,8 @@ function formatKnown(key: KnownKey, card: CardData, keepEmpty = false): string[]
       return card.archived === undefined ? undefined : [`archived: ${formatScalar(card.archived)}`];
     case "claim":
       return card.claim === undefined ? undefined : formatEntry("claim", { by: card.claim.by, since: card.claim.since, until: card.claim.until });
+    case "schedule":
+      return card.schedule === undefined ? undefined : formatEntry("schedule", { name: card.schedule.name, by: card.schedule.by, due: card.schedule.due });
     default:
       return [`${key}: ${formatScalar(card[key])}`];
   }

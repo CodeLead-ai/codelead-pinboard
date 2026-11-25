@@ -92,7 +92,8 @@ describe("codelead board, command by command, through each command's function", 
     // ... and, for each rule, whether the commands refuse it, and the cursor's three keys: six more.
     // ... and Ready (the column an agent may pick a card up from by itself): the second half of the first rule of Never, and its section, nine.
     // ... and the dispatcher (take, the claim, renew, release, the claim's event kinds): seven more.
-    expect(guide.split("\n").length).toBeLessThanOrEqual(89);
+    // ... and scheduled cards (they come into Ready like any other; an agent never makes a schedule; their event kinds): three more.
+    expect(guide.split("\n").length).toBeLessThanOrEqual(92);
     expect(fs.readFileSync(path.join(term.dir, ".gitignore"), "utf8")).toBe("cursors/\n.board.lock\nprivate-names.txt\n.*.tmp\n.local/\n");
     expect(await runBoardInit({}, term.deps)).toBe(1);
     expect(term.said()).toBe(`A board is already at ${term.dir} (board.json is there); nothing was written.`);
@@ -253,7 +254,7 @@ describe("codelead board, command by command, through each command's function", 
       expect(JSON.parse(String(said.mock.calls[0]![0])).columns[0].cards.map((card: { id: number }) => card.id)).toEqual([1]);
       await createBoardCommand().parseAsync(["move", "1", "--board", term.dir, "--to", "done", "--as", "claude"], { from: "user" });
       expect(process.exitCode).toBe(1);
-      expect(createBoardCommand().commands.map((command) => command.name())).toEqual(["init", "check", "list", "show", "new", "reply", "move", "set", "take", "renew", "release", "archive", "unarchive", "validate", "add-ready", "import", "tidy", "serve"]);
+      expect(createBoardCommand().commands.map((command) => command.name())).toEqual(["init", "check", "list", "show", "new", "reply", "move", "set", "take", "renew", "release", "archive", "unarchive", "validate", "add-ready", "import", "tidy", "schedules", "serve"]);
     } finally {
       said.mockRestore();
       process.exitCode = exit;

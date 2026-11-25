@@ -67,6 +67,8 @@ export interface CardSummary {
   claim?: ClaimInfo;
   /** A card in Ready that would not be given now: why, in one short line ("waits on #12"), until `until` when it ends by itself. */
   wait?: WaitInfo;
+  /** The schedule that made the card: its name, whose schedule it is, the time it was due (core/schedules.ts). */
+  schedule?: ScheduledInfo;
   relations: number;
   attachments: number;
   file: string;
@@ -78,6 +80,13 @@ export interface ClaimInfo {
   by: string;
   since: string;
   until: string;
+}
+
+/** The schedule that made a card: its name, the person whose schedule it is, the time it was due (UTC). */
+export interface ScheduledInfo {
+  name: string;
+  by: string;
+  due: string;
 }
 
 /** Why a card in Ready would not be given now (core/dispatch.ts). */
@@ -223,6 +232,7 @@ export interface CardDetail {
     archived?: string;
     color?: string;
     claim?: ClaimInfo;
+    schedule?: ScheduledInfo;
     extra: Record<string, unknown>;
     description: string;
     thread: Array<{ author: string; at: string; body: string }>;
@@ -424,4 +434,96 @@ export interface BatchPayload {
   changed: number;
   unchanged: number;
   refused: number;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Schedules (core/schedules.ts): the person's standing asks, each of which puts a card in Ready at its times
+
+/**
+ * When a schedule is due, as its file keeps it (core/when.ts): every N minutes, hours or days from a
+ * local time; every day at a local time; on named weekdays at a local time.
+ */
+export type ScheduleRuleInfo =
+  | { kind: "every"; count: number; unit: "minutes" | "hours" | "days"; from: string }
+  | { kind: "daily"; at: string }
+  | { kind: "weekly"; days: Array<"mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun">; at: string };
+
+/** The card a schedule makes: its type, title, description, tags and the fields Ready asks for. */
+export interface ScheduleCardInfo {
+  type: string;
+  title: string;
+  description?: string;
+  tags?: string[];
+  fields?: Record<string, unknown>;
+}
+
+/** A time as a person reads it: UTC, the local time in the schedule's zone ("Mon 2026-11-23 09:00"), and UTC in words ("2026-11-23 08:00 UTC"). */
+export interface TimeInfoPayload {
+  at: string;
+  local: string;
+  utc: string;
+}
+
+/** One schedule, as GET /api/schedules lists it. */
+export interface ScheduleInfo {
+  name: string;
+  file: string;
+  rule: ScheduleRuleInfo;
+  /** The rule in words: "every Monday at 09:00". */
+  words: string;
+  zone: string;
+  card: Required<ScheduleCardInfo>;
+  made: { by: string; at: string };
+  since: string;
+  changed?: { by: string; at: string };
+  paused?: { by: string; at: string };
+  maker: { id: string; name: string; person: boolean };
+  /** The next time it is due, unless it is paused; already passed when `dueNow`. */
+  next?: TimeInfoPayload;
+  dueNow: boolean;
+  last?: { due: string; at: string; card?: CardId; skipped?: string; open?: CardId };
+  lastCard?: { id: CardId; due: string; at: string; title?: string; column?: string; archived?: boolean; open: boolean };
+  open?: { id: CardId; column: string };
+}
+
+/** GET /api/schedules. */
+export interface SchedulesPayload {
+  at: string;
+  /** This machine's time zone: a schedule made now writes it down. */
+  zone: string;
+  /** The board's Ready column, when it has one. */
+  ready?: string;
+  schedules: ScheduleInfo[];
+  unreadable: Array<{ file: string; problems: string[] }>;
+  /** The command that gives a board without Ready its column (`pinboard add-ready`). */
+  command: string;
+}
+
+/** POST /api/schedules: a new schedule, made by the board's person. `dryRun`: every check, nothing written. */
+export interface ScheduleInput {
+  name: string;
+  rule: ScheduleRuleInfo;
+  zone?: string;
+  card: ScheduleCardInfo;
+  dryRun?: boolean;
+}
+
+/** What a write of a schedule answers: the schedule as its file says it, the next time it is due (UTC), the events. */
+export interface ScheduleWritePayload {
+  name: string;
+  file: string;
+  next?: string;
+  /** The next time in words, in the schedule's zone and in UTC: "Mon 2026-11-23 09:00 Europe/Berlin (2026-11-23 08:00 UTC)". */
+  nextWords?: string;
+  events: EventItem[];
+  dryRun?: boolean;
+}
+
+/** What POST /api/schedules/run did, in the core's words. */
+export interface ScheduleRunPayload {
+  at: string;
+  entries: Array<{ schedule: string; outcome: "created" | "skipped" | "held"; due: string; missedCount: number; missed: string[]; card?: { id: CardId; title: string }; open?: { id: CardId; column: string }; words: string }>;
+  reason?: "no-schedules" | "no-ready-column" | "nothing-due";
+  next?: { schedule: string; due: string; words: string };
+  words: string;
 }

@@ -367,6 +367,112 @@ step of the claim in plain words.
 
 `--lease <minutes>` on `take` or `renew` asks for another length, up to `maxLeaseMinutes`.
 
+### Scheduled cards
+
+A **schedule** is your standing ask. At its time it puts a card in **Ready**, and the board gives
+that card to an agent like any other Ready card. The schedule belongs to the board, not to an
+agent: whichever agent asks the board for its card gets the scheduled ones too. Every run leaves a
+card with its record, so nothing runs unseen. The board still starts no agent.
+
+- **Only you** make, change, pause or remove a schedule. The commands refuse an agent.
+- **Its card must pass the Ready check** when you make the schedule: how to tell it is done, what it
+  may touch, its limit. If it does not, the schedule is refused, in the check's own words.
+- **When it is due**, one of three rules:
+  - every N minutes, hours or days from a start time: `--every 30m`, `--every 2h`, `--every 1d`,
+    with `--from "2026-11-23 09:00"` (now when not given);
+  - every day at a time: `--daily --at 07:30`;
+  - on days of the week at a time: `--weekly mon,thu --at 09:00`.
+- **Times are this machine's local time.** The schedule writes its time zone down when you make it
+  (`"zone": "Europe/Berlin"`), and reads its times in that zone from then on (`--zone` names
+  another). Every time is shown in that zone and in UTC.
+- **This is the one way a card enters Ready without your move at that moment.** It is allowed
+  because you made the schedule: the card is your ask. You are its author, it is tagged
+  `scheduled:<name>`, and its file says which schedule made it.
+
+**One real run.** Every Monday at 09:00: check the dependencies. You make the schedule once:
+
+```
+$ pinboard schedules add check-deps --as robin --weekly mon --at 09:00 --title "Check the dependencies" --body 'Run `npm outdated`; update what is safe.' --field definitionOfDone="npm outdated lists nothing that is safe to update; npm test passes." --field mayTouch='["package.json", "package-lock.json"]' --field limitMinutes=30
+Made the schedule check-deps: every Monday at 09:00 (Europe/Berlin).
+Its first card is due Mon 2026-11-23 09:00 Europe/Berlin (2026-11-23 08:00 UTC), in Ready.
+docs/codelead/board/schedules/check-deps.json
+```
+
+The list says what each schedule does and when it is due next:
+
+```
+$ pinboard schedules
+1 schedule, each time in its zone and in UTC:
+
+check-deps: every Monday at 09:00 (Europe/Berlin), made by robin on 2026-11-20 09:00 UTC
+  next: Mon 2026-11-23 09:00 Europe/Berlin (2026-11-23 08:00 UTC)
+  last card: none yet
+```
+
+On Monday at 09:00 the page's process makes the card by itself, if it is running. The command
+does the same, once:
+
+```
+$ pinboard schedules run
+The schedule check-deps put #1 in Ready: Check the dependencies (due Mon 2026-11-23 09:00 Europe/Berlin, 2026-11-23 08:00 UTC).
+docs/codelead/board/items/0001-check-the-dependencies.md
+```
+
+The card is in Ready, written by you, tagged `scheduled:check-deps`. Its file says which schedule
+made it, and the time it was due:
+
+```yaml
+schedule:
+  name: check-deps
+  by: robin
+  due: 2026-11-23T08:00:00Z
+```
+
+An agent asks the board for its card, and gets it as any other:
+
+```
+$ pinboard take --as claude
+Took #1 (task): Check the dependencies
+claude holds it until 2026-11-23T08:35:00Z (30 minutes): renew it while you work (`pinboard renew 1 --as claude`), and hand it to For review when it is done.
+Done when: npm outdated lists nothing that is safe to update; npm test passes.
+May touch: package.json, package-lock.json
+Limit: 30 minutes
+docs/codelead/board/items/0001-check-the-dependencies.md
+```
+
+**Never several cards for one schedule.**
+
+- **While its last card is still open** (in Ready or In progress), the schedule makes no new one.
+  It says why, once for each time it was due:
+
+  ```
+  $ pinboard schedules run
+  The schedule check-deps was due Mon 2026-11-30 09:00 Europe/Berlin (2026-11-30 08:00 UTC) and made no card: the last one, #1, is still open (in In progress).
+  ```
+
+  Once that card is in For review or Done, or archived, the next time it is due makes the next card.
+- **A time missed while nothing ran** (the page was closed for three weeks) makes **one** card at
+  the next run, not three. The card's description lists the times it stands for.
+- **Two runs at the same moment** (the page's process and the command, say) make one card: the
+  board's lock, and the last time each schedule dealt with, kept in its file.
+- **A paused schedule** makes nothing (`pinboard schedules pause check-deps --as robin`). When you
+  resume it, the times it missed are not made up.
+
+**The nights the clock changes.** A time the clock skips (02:30 on the night it jumps from 02:00 to
+03:00) is due an hour later that day, at 03:30, once. A time the clock passes twice (02:30 on the
+night it goes back from 03:00 to 02:00) is due once, the first time. `--every` in minutes or hours
+counts real time: across the change its local times move by an hour. `--every` in days keeps its
+local time of day.
+
+**Schedules run only while something calls them:** the page's process (`pinboard serve`, at its
+start and every minute), a desktop app, or `pinboard schedules run` from your system's own
+scheduler (cron, launchd, Task Scheduler); a time missed while nothing calls them makes one card at
+the next call.
+
+**A board made before schedules** works as it is: it needs no new file, and `pinboard schedules`
+says there is none. On a board without Ready, `schedules add` and `schedules run` say that
+`codelead board add-ready` gives it the column.
+
 ### What happens behind the scenes
 
 Nothing below is typed by you. The agent does it by itself, because the paragraph you added in
@@ -599,6 +705,7 @@ A board is a folder, `docs/codelead/board` in the repository by default:
 | `items/<nnnn>-<slug>.md` | One card a file. |
 | `events.jsonl` | One JSON object a line, appended, never edited. |
 | `cursors/<participant>.json` | What a participant has seen. Per machine; git ignores it. |
+| `schedules/<name>.json` | Optional. One schedule a file: its rule, its zone, its card, who made it, and the last time it was due that a run dealt with ("Scheduled cards"). One file each, so that two schedules made on two branches never touch the same file. Git carries them. |
 | `imports/` | Optional: the printed mapping of an import, kept for the record. The import itself marks each document it read in `board.json` (`imports`), so that it runs once. |
 | `.gitignore` | Keeps `cursors/`, the lock, `private-names.txt`, `.local/` and temporary files out of git. |
 | `.local/preferences.json` | Optional. This machine's view choices: the theme and the board's background, by default and per project, and the project shown last (`pinboard.preferences/1`). Written by the page; git ignores it. |
@@ -674,11 +781,13 @@ Fine. After packages 4 and 5.
 
 - The front matter is YAML. Required: `id`, `type`, `title`, `column`, `author`, `created`,
   `updated`. Also read: `tags`, `color`, `relations`, `attachments`, `fields`, `session`,
-  `status`, `archived`, `claim`. Unknown keys, comments and blank lines are kept; a change
-  rewrites only the lines it changes.
+  `status`, `archived`, `claim`, `schedule`. Unknown keys, comments and blank lines are kept; a
+  change rewrites only the lines it changes.
 - `claim` is written by the board alone, on a card it gave an agent from Ready: `by` (the agent),
   `since` and `until` (UTC). It is there while the card is in In progress, and goes when the claim
   ends.
+- `schedule` is written by the board alone, on a card a schedule made: `name` (the schedule),
+  `by` (the person whose schedule it is, the card's author) and `due` (the time it was due, UTC).
 - The text before `## Thread` is the description. Each comment is a heading
   `### <participant> · <UTC time>` and its markdown. Comments are appended, never rewritten.
 - The file name starts with the id, zero-padded, then a slug. The id is the key.
@@ -710,6 +819,22 @@ Kinds: `item.created`, `item.updated`, `item.moved`, `item.archived`, `item.unar
 
 A move that comes with a claim (a take, a release, an expired claim) is an `item.moved` marked
 `withClaim`, written just before the claim's event; the two read as one line.
+
+And those of a schedule (`by`: the person whose schedule it is):
+
+| Kind | What happened | `data` |
+| --- | --- | --- |
+| `schedule.added` | The person made the schedule. | `schedule`, `rule`, `zone` |
+| `schedule.changed` | The person changed it. | `schedule`, `changed` (`rule`, `zone`, `card`); `rule` and `zone` when they changed |
+| `schedule.paused` | The person paused it. | `schedule` |
+| `schedule.resumed` | The person resumed it. | `schedule` |
+| `schedule.removed` | The person removed it; the cards it made stay. | `schedule` |
+| `schedule.ran` | At its time it put its card (`item`) in Ready. | `schedule`, `due`; `missed` when it stands for times missed |
+| `schedule.skipped` | It was due and made no card: its card (`item`) is still open, or the board refused the card. | `schedule`, `due`, `why` (`open` or `refused`), `open` or `refused` and `words` |
+
+The card a schedule makes has its `item.created`, marked with `schedule` and `due`, written just
+before the `schedule.ran`; the two read as one line ("created it by the schedule check-deps (task in
+Ready), due …").
 
 The card is the truth; the line is what a check reports. A card file that changed with no event
 (a hand edit, an agent that forgot) gets an event by `unknown` at the next check, or from the
@@ -776,6 +901,11 @@ gives the same commands under its own name (`codelead board …`).
 | `unarchive <id…> --as <person>` | Brings archived cards back to their columns. A person only. |
 | `validate` | Checks every file of the board. |
 | `add-ready` | Gives a board made before Ready its Ready column, and says what it did. `AGENTS.md` is written again when it is still the package's text. No card moves. |
+| `schedules` | The schedules: each one's rule in words, the next time it is due in its zone and in UTC, whether it is paused, the last card it made. A board with none says so. (`schedules list` too.) |
+| `schedules add <name> --as <person>` | Makes a schedule (a person only): `--every <30m\|2h\|1d>` with `--from`, `--daily` or `--weekly <days>` with `--at <HH:MM>`, `--zone`; its card from `--type`, `--title`, `--body`, `--body-file`, `--tag`, `--for <agent>`, `--field` (the three things Ready asks), or `--from-card <id>`. `--dry-run` writes nothing. |
+| `schedules change <name> --as <person>` | Changes its rule (its times count from then), zone or card (`--untag`, `--unset-field` too). |
+| `schedules pause\|resume\|remove <name> --as <person>` | Pauses it (the times it misses are not made up), resumes it, or removes it (the cards it made stay). |
+| `schedules run` | Makes, once, the card of each schedule that is due now, and says what it did; or that nothing is due, and when the next is. Exit 0 either way. |
 | `import --from <folder>` | Turns `PINNED.md`, `DECISIONS-PENDING.md` and, with `--plan <file>`, a plan's status table into cards, once. `--from` is required; no plan is read unless it is named. |
 | `tidy --imported` | After the import: strips the bold repetition of the title from imported cards. |
 | `serve` | Serves the page on 127.0.0.1 (port 7414, or a free one). `--open` opens it. |
@@ -797,25 +927,26 @@ Every refusal, by the code `--json` gives it:
 
 | `refused` | Exit | When |
 | --- | --- | --- |
-| `usage` | 2 | A missing option or argument (`new` without `--as`); two that do not go together (`--body` and `--body-file`); a value of the wrong form (not a card id, a relation that is not `<kind>:<id>`, a field that is not `<name>=<value>` or not one of the card's type, not a time, not a port); a file that cannot be read; `init` arguments that make no valid board; `serve` with no page built and no tools to build it. The parser's own refusals (an unknown option, a missing `<id>`) exit 2 too, in its words. |
+| `usage` | 2 | A missing option or argument (`new` without `--as`); two that do not go together (`--body` and `--body-file`); a value of the wrong form (not a card id, a relation that is not `<kind>:<id>`, a field that is not `<name>=<value>` or not one of the card's type, not a time, not a port); a file that cannot be read; `init` arguments that make no valid board; `serve` with no page built and no tools to build it; a schedule's rule that is none of the three, or a time zone this machine does not know. The parser's own refusals (an unknown option, a missing `<id>`) exit 2 too, in its words. |
 | `no-board` | 2 | No `board.json` where the command looks. |
-| `not-found` | 2 | No card with the id given, a relation's included. |
+| `not-found` | 2 | No card with the id given, a relation's included; no schedule of the name given. |
 | `board-exists` | 1 | `init` where a board already is. |
 | `participant` | 1 | `--as` names no participant of the board. |
-| `not-allowed` | 1 | The participant may not do it: an agent archives, creates on a board whose `agents.mayCreate` is false, sets a card's colour, or tags a card `for:codelead` (CodeLead itself may); an agent imports; an agent changes the Ready fields of a card in Ready or of a held card, or adds or removes a `for:` tag on either. |
-| `column` | 1 | No such column; an agent moves or creates a card in a column it may not (a person's column, or one not in `agents.mayMoveTo`); an agent moves a card out of Ready (the board gives it its card: `take`). |
+| `not-allowed` | 1 | The participant may not do it: an agent archives, creates on a board whose `agents.mayCreate` is false, sets a card's colour, or tags a card `for:codelead` (CodeLead itself may); an agent imports; an agent changes the Ready fields of a card in Ready or of a held card, or adds or removes a `for:` tag on either; an agent makes, changes, pauses, resumes or removes a schedule. |
+| `column` | 1 | No such column; an agent moves or creates a card in a column it may not (a person's column, or one not in `agents.mayMoveTo`); an agent moves a card out of Ready (the board gives it its card: `take`); a schedule made on a board without Ready. |
 | `claim` | 1 | A take by a person; a lease longer than `dispatch.maxLeaseMinutes`; a renewal or a release by anyone but the agent that holds the card, or of a card no one holds; another agent's move of a held card, or its holder's move anywhere but For review. |
+| `schedule` | 1 | `schedules add` under a name the board has a schedule of already, or a name that is no short word of lower-case letters, digits and `-`. |
 | `type` | 1 | No such card type. |
 | `decision` | 1 | An agent sets or removes a decision; a decision that is not the option chosen, by a participant, on a day; an ask that is not one to three sentences. |
 | `color` | 1 | A colour that is none of the five. |
 | `relation` | 1 | A card related to itself; a kind of relation the board does not have; a batch's relation to a key no card of it has. |
 | `text` | 1 | An empty comment, title or tag; a title, status or tag of more than one line. |
-| `ready` | 1 | A card moved to Ready, or made there, that does not say how to tell it is done, what it may touch, or a limit in minutes or money; a change that would take one of these from a card in Ready; a limit that is not a number. |
+| `ready` | 1 | A card moved to Ready, or made there, that does not say how to tell it is done, what it may touch, or a limit in minutes or money; a change that would take one of these from a card in Ready; a limit that is not a number; a schedule whose card would not pass this check. |
 | `structure` | 1 | A line the card would read as its own structure (`## Thread`, a comment's heading). |
 | `secret` | 1 | The text holds a secret (a key or a token, a password, a private key). |
 | `machine-path` | 1 | The text holds a path of this machine outside the workspace. |
 | `private-name` | 1 | The text holds a name of `private-names.txt`. |
-| `stale` | 1 | The card changed since it was read (`--if-updated`), or while it was written. |
+| `stale` | 1 | The card changed since it was read (`--if-updated`), or while it was written; a schedule's file changed while it was written. |
 | `invalid` | 1 | A file of the board that cannot be read (a card, `board.json`, a cursor), or one id on two cards; a batch file that does not read, or two of its cards with one key. |
 | `imported` | 1 | `import` of a document it imported already. |
 | `busy` | 1 | Another writer holds the board's lock: retry. |
@@ -910,7 +1041,23 @@ routes, each through the same core:
 - `POST /api/items/<id>/renew` `{ as, lease? }` and `POST /api/items/<id>/release`
   `{ as, reason }`: the holder's renewal and release.
 
-Nothing in the package starts an agent, or runs a loop or a timer for one.
+The schedules' routes ("Scheduled cards"), each through the same core:
+
+- `GET /api/schedules`: every schedule, with its rule in words, its next time in its zone and in
+  UTC, and its last card (the core's `listSchedules`).
+- `POST /api/schedules` `{ name, rule, zone?, card, dryRun? }`, `PUT /api/schedules/<name>`, and
+  `POST /api/schedules/<name>/pause`, `/resume`, `/remove`: the person's writes, as the board's
+  person. `dryRun` checks and writes nothing (the page shows the Ready check's words before saving).
+- `POST /api/schedules/run`: runs what is due now (the core's `runSchedules`), as the timer does.
+
+While it listens, the page's process runs the schedules that are due at its start and every minute
+(`schedulesEveryMs` in `createBoardServer`'s options, 60 000 by default, 0 for never; `timers` to
+give it another timer), and says in its log what it made. A host that runs the schedules itself
+(a desktop app) sets 0 and calls the core's `runSchedules(ctx)`, or the route, on its own timer:
+the board's lock and each schedule's file make one card however many call it at once.
+
+Nothing in the package starts an agent, or runs a loop or a timer for one. The one timer it runs is
+the page's process's, for the schedules: it makes cards in Ready, and starts nothing.
 
 ## Working on the package
 

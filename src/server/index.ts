@@ -5,6 +5,6 @@
 export * from "./contract.js";
 export { editorInfo, mentionsIn, resolveCardPath, vscodeHref } from "./editor.js";
 export { buildPage, canBuildPage, contentSecurityPolicy, ensurePageBuilt, PACKAGE_NAME, pageBuildReason, pageLocation, PageFiles, type PageLocation } from "./page.js";
-export { createBoardServer, statusOfRefusal, type BoardServer, type BoardServerOptions } from "./server.js";
+export { createBoardServer, DEFAULT_SCHEDULES_EVERY_MS, statusOfRefusal, type BoardServer, type BoardServerOptions, type ScheduleTimers } from "./server.js";
 export { BoardStream, type StreamOptions } from "./stream.js";
 export { boardPayload, cardDetail, notificationsPayload, personOf, summarize, WORKING_COLUMN } from "./views.js";

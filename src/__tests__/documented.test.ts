@@ -15,6 +15,9 @@ import {
   runBoardRelease,
   runBoardRenew,
   runBoardReply,
+  runBoardScheduleAdd,
+  runBoardSchedules,
+  runBoardSchedulesRun,
   runBoardSet,
   runBoardShow,
   runBoardTake,
@@ -67,6 +70,8 @@ interface Terminal {
   /** What the last commands printed, and empties the record. */
   said: () => string;
   tick: () => void;
+  /** Sets the clock to a time (a schedule's Monday). */
+  at: (iso: string) => void;
   files: () => string[];
 }
 
@@ -97,6 +102,9 @@ async function terminal(): Promise<Terminal> {
     said: () => lines.splice(0).join("\n"),
     tick: () => {
       time += 60_000;
+    },
+    at: (iso) => {
+      time = Date.parse(iso);
     },
     files: () => fs.readdirSync(path.join(dir, "items")).sort()
   };
@@ -593,5 +601,87 @@ describe("the README's section on Ready, run as written", () => {
     expect(await runBoardAddReady({}, term.deps)).toBe(0);
     expect(term.said()).toBe(printed("pinboard add-ready").replace(/\n```[\s\S]*$/, ""));
     expect(README).toContain("| `add-ready` |");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+
+describe("the README's section on scheduled cards, run as written", () => {
+  const section = README.slice(README.indexOf("### Scheduled cards"), README.indexOf("### What happens behind the scenes"));
+  /**
+   * The section's block of a command's output, the `from`-th time it shows the command (from 0): from
+   * its `$ <command>` line to the end of its code block, without the indent of a block in a list.
+   */
+  const block = (command: string, from = 0): string => {
+    let at = -1;
+    for (let index = 0; index <= from; index += 1) at = section.indexOf(`$ ${command}\n`, at + 1);
+    expect(at, command).toBeGreaterThan(-1);
+    const indent = section.slice(section.lastIndexOf("\n", at) + 1, at);
+    const start = at + command.length + 3;
+    return section
+      .slice(start, section.indexOf(`${indent}\`\`\``, start))
+      .replace(/\n$/, "")
+      .split("\n")
+      .map((line) => (line.startsWith(indent) ? line.slice(indent.length) : line))
+      .join("\n");
+  };
+
+  it("goes from the command that makes the schedule to the card that appears in Ready and is taken, in the commands' own words", async () => {
+    expect(README.indexOf("### Scheduled cards")).toBeGreaterThan(README.indexOf("#### How an agent gets its card: take"));
+    const term = await terminal();
+    const deps = { ...term.deps, command: "pinboard", zone: "Europe/Berlin" };
+    // Friday 2026-11-20, 10:00 in Berlin: the schedule is made.
+    const done = "npm outdated lists nothing that is safe to update; npm test passes.";
+    expect(
+      await runBoardScheduleAdd(
+        "check-deps",
+        { as: "robin", weekly: "mon", at: "09:00", title: "Check the dependencies", body: "Run `npm outdated`; update what is safe.", field: [`definitionOfDone=${done}`, 'mayTouch=["package.json", "package-lock.json"]', "limitMinutes=30"] },
+        deps
+      )
+    ).toBe(0);
+    expect(term.said()).toBe(
+      block(
+        `pinboard schedules add check-deps --as robin --weekly mon --at 09:00 --title "Check the dependencies" --body 'Run \`npm outdated\`; update what is safe.' --field definitionOfDone="${done}" --field mayTouch='["package.json", "package-lock.json"]' --field limitMinutes=30`
+      )
+    );
+    expect(await runBoardSchedules({}, deps)).toBe(0);
+    expect(term.said()).toBe(block("pinboard schedules"));
+    // Monday 09:00 in Berlin.
+    term.at("2026-11-23T08:00:20Z");
+    expect(await runBoardSchedulesRun({}, deps)).toBe(0);
+    expect(term.said()).toBe(block("pinboard schedules run"));
+    const file = fs.readFileSync(path.join(term.dir, "items", term.files()[0]!), "utf8");
+    const scheduled = /\nschedule:\n(?: {2}.*\n)+/.exec(file)![0].trimStart();
+    expect(section).toContain(`\`\`\`yaml\n${scheduled}\`\`\``);
+    expect(file).toContain("\ntags: [scheduled:check-deps]\nauthor: robin\n");
+    term.at("2026-11-23T08:05:00Z");
+    expect(await runBoardTake({ as: "claude" }, deps)).toBe(0);
+    expect(term.said()).toBe(block("pinboard take --as claude"));
+    // The next Monday, the card is still in In progress: no new one, and why.
+    term.at("2026-11-30T08:00:20Z");
+    expect(await runBoardSchedulesRun({}, deps)).toBe(0);
+    expect(term.said()).toBe(block("pinboard schedules run", 1));
+    expect(getCard(term.ctx, 1).card.column).toBe("in-progress");
+    expect(term.files()).toHaveLength(1);
+    // The table of the commands lists them.
+    for (const row of ["| `schedules` |", "| `schedules add <name> --as <person>` |", "| `schedules change <name> --as <person>` |", "| `schedules pause\\|resume\\|remove <name> --as <person>` |", "| `schedules run` |", "| `schedules/<name>.json` |"]) {
+      expect(README).toContain(row);
+    }
+    // Its one sentence on who runs the schedules, and what becomes of a time missed meanwhile.
+    expect(section.replace(/\s+/g, " ")).toContain(
+      "**Schedules run only while something calls them:** the page's process (`pinboard serve`, at its start and every minute), a desktop app, or `pinboard schedules run` from your system's own scheduler (cron, launchd, Task Scheduler); a time missed while nothing calls them makes one card at the next call."
+    );
+  });
+
+  it("says what a board made before schedules, or without Ready, answers", async () => {
+    const term = await terminal();
+    const deps = { ...term.deps, command: "pinboard", zone: "Europe/Berlin" };
+    expect(await runBoardSchedules({}, deps)).toBe(0);
+    expect(term.said()).toMatch(/^This board has no schedules\./);
+    const config = JSON.parse(fs.readFileSync(path.join(term.dir, "board.json"), "utf8")) as Parameters<typeof agentsGuide>[0];
+    fs.writeFileSync(path.join(term.dir, "board.json"), `${JSON.stringify({ ...config, columns: config.columns.filter((column) => column.id !== "ready") }, null, 2)}\n`);
+    expect(await runBoardScheduleAdd("check-deps", { as: "robin", daily: true, at: "09:00", title: "x" }, deps)).toBe(1);
+    expect(term.said()).toContain("`codelead board add-ready` gives the board its Ready column.");
+    expect(section.replace(/\s+/g, " ")).toContain("On a board without Ready, `schedules add` and `schedules run` say that `codelead board add-ready` gives it the column.");
   });
 });

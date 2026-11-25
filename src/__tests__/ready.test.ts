@@ -325,12 +325,16 @@ describe("AGENTS.md says it in one place, and a board without Ready reads as bef
     expect(guide.replace(/\n {2}/g, " ").replace(/\n(?!\n|#|- )/g, " ")).toContain(
       "Never move a card into Ready or out of it, or change those fields or a `for:` tag while it is there or held: the commands refuse it."
     );
-    // The guide with Ready, its four differences taken back, is the guide without it: a board without Ready has no claims either.
+    // The guide with Ready, its four differences taken back, is the guide without it: a board without Ready has no claims
+    // and no schedules either.
     const back = guide
       .replace(`\n${readySection(withReady)}`, "")
       .replace(", or\n  when the person moved the card to Ready.", ".")
       .replace("Move a card into Pinned, Ready or Done", "Move a card into Pinned or Done")
-      .replace("attachment.added, claim.taken,\n  claim.renewed, claim.released, claim.expired, claim.ended.", "attachment.added.");
+      .replace(
+        "attachment.added, claim.taken,\n  claim.renewed, claim.released, claim.expired, claim.ended, schedule.added, schedule.changed,\n  schedule.paused, schedule.resumed, schedule.removed, schedule.ran, schedule.skipped.",
+        "attachment.added."
+      );
     expect(back).toBe(agentsGuide(without));
     expect(agentsGuide(without)).not.toMatch(/Ready/);
     expect(readySection(without)).toBe("");

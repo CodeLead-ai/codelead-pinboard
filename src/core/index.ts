@@ -135,6 +135,69 @@ export {
   type ReadyGap,
   type ReadyThing
 } from "./ready.js";
+export {
+  addSchedule,
+  changeSchedule,
+  listSchedules,
+  pauseSchedule,
+  removeSchedule,
+  resumeSchedule,
+  runSchedules,
+  scheduleCardOf,
+  type ScheduleCardInput,
+  type ScheduleChanges,
+  type ScheduleInput,
+  type ScheduleListing,
+  type ScheduleOutcome,
+  type ScheduleRun,
+  type ScheduleRunEntry,
+  type ScheduleRunReason,
+  type ScheduleView,
+  type ScheduleWrite,
+  type TimeInfo
+} from "./schedules.js";
+export {
+  checkedScheduleName,
+  isScheduleName,
+  readSchedules,
+  scheduleFileOf,
+  scheduleProblems,
+  SCHEDULE_SCHEMA,
+  SCHEDULED_TAG_PREFIX,
+  SCHEDULES_FOLDER,
+  type LoadedSchedule,
+  type Schedule,
+  type ScheduleLast,
+  type ScheduleTemplate,
+  type Stamp
+} from "./scheduleFiles.js";
+export {
+  bothWords,
+  checkedRule,
+  checkedZone,
+  clockOf,
+  dueBetween,
+  everyOf,
+  EVERY_UNITS,
+  instantOf,
+  isZone,
+  localTimeAt,
+  localTimeOf,
+  localWords,
+  machineZone,
+  nextDue,
+  ruleWords,
+  utcWords,
+  wallOf,
+  weekdaysOf,
+  WEEKDAYS,
+  type DueTimes,
+  type EveryUnit,
+  type LocalDay,
+  type ScheduleRule,
+  type Wall,
+  type Weekday
+} from "./when.js";
 export { checkedPreferences, ensureLocalIgnored, LOCAL_FOLDER, PREFERENCES_FILE, PREFERENCES_MAX_BYTES, preferencesPath, readPreferences, writePreferences, type PreferencesRead } from "./preferences.js";
 export * from "./themes.js";
 export { digest, isIsoTime, isoSeconds, sha256, slugify, splitText } from "./text.js";

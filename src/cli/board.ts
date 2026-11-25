@@ -42,6 +42,28 @@ import {
   unarchiveCard,
   updateCard,
   validateBoard,
+  addSchedule,
+  bothWords,
+  changeSchedule,
+  checkedZone,
+  clockOf,
+  everyOf,
+  listSchedules,
+  localTimeAt,
+  localTimeOf,
+  localWords,
+  machineZone,
+  pauseSchedule,
+  removeSchedule,
+  resumeSchedule,
+  ruleWords,
+  runSchedules,
+  scheduleCardOf,
+  utcWords,
+  weekdaysOf,
+  type ScheduleCardInput,
+  type ScheduleChanges,
+  type ScheduleRule,
   type Attachment,
   type BoardConfig,
   type BoardContext,
@@ -59,7 +81,7 @@ import {
 } from "../core/index.js";
 import { withArticle } from "../core/text.js";
 import { formatImportMapping, formatTidy, importDocuments, tidyImported } from "../import/index.js";
-import { createBoardServer, ensurePageBuilt, pageLocation, personOf } from "../server/index.js";
+import { createBoardServer, ensurePageBuilt, pageLocation, personOf, type ScheduleTimers } from "../server/index.js";
 import { consoleLog, type BoardLog } from "./log.js";
 
 /**
@@ -85,6 +107,8 @@ export interface BoardCliDependencies {
   log?: BoardLog;
   /** The host's sanitizer for the guard (secrets, machine paths); the board's own when not given. */
   sanitizer?: SanitizerFactory;
+  /** This machine's time zone, which a schedule made now writes down; the system's when not given. */
+  zone?: string;
 }
 
 interface Common {
@@ -210,6 +234,38 @@ export interface BoardServeOptions extends Common {
   port?: string;
   open?: boolean;
 }
+/** `schedules add <name>` and `schedules change <name>`: when it is due, its zone, and its card. */
+export interface BoardScheduleOptions extends Common {
+  as?: string;
+  /** `30m`, `2h`, `1d`: every N minutes, hours or days, from `--from`. */
+  every?: string;
+  /** The local time an `--every` rule starts from (`2026-11-23 09:00`); now when not given. */
+  from?: string;
+  daily?: boolean;
+  /** The days of a weekly rule (`mon,thu`). */
+  weekly?: string;
+  /** The local time of day of a daily or weekly rule (`09:00`). */
+  at?: string;
+  /** The time zone the rule is read in; this machine's when not given. */
+  zone?: string;
+  type?: string;
+  title?: string;
+  body?: string;
+  bodyFile?: string;
+  tag?: string[];
+  untag?: string[];
+  /** The agent the card is for: the tag `for:<agent>`. */
+  for?: string;
+  /** `name=value`: one of the fields Ready asks for. */
+  field?: string[];
+  unsetField?: string[];
+  /** Take the card from a card of the board: its type, title, description, tags and Ready fields. */
+  fromCard?: string;
+  dryRun?: boolean;
+}
+export interface BoardScheduleNameOptions extends Common {
+  as?: string;
+}
 export interface BoardServeDependencies extends BoardCliDependencies {
   /** The built page to serve; the package's page (dist/page), built when missing or stale, when not given. */
   pageDir?: string;
@@ -225,6 +281,10 @@ export interface BoardServeDependencies extends BoardCliDependencies {
   stdin?: { isTTY?: boolean; once(event: "end" | "close", listener: () => void): unknown; resume(): unknown };
   /** Whether stdin is a pipe or a socket from a parent program (never a terminal or /dev/null). `fstat(0)` when not given. */
   stdinIsPipe?: () => boolean;
+  /** How often the page's process makes the cards of the schedules that are due, in ms (its default when not given; 0: never). */
+  schedulesEveryMs?: number;
+  /** The timer it does so on (Node's when not given). */
+  timers?: ScheduleTimers;
 }
 
 /** True when file descriptor 0 is a pipe or a socket: a parent program holds its other end. */
@@ -250,7 +310,8 @@ function contextFor(options: Common, dependencies: BoardCliDependencies): BoardC
     ...("root" in location ? { root: location.root } : {}),
     ...(dependencies.home ? { home: dependencies.home } : {}),
     ...(dependencies.now ? { now: dependencies.now } : {}),
-    ...(dependencies.sanitizer ? { sanitizer: dependencies.sanitizer } : {})
+    ...(dependencies.sanitizer ? { sanitizer: dependencies.sanitizer } : {}),
+    ...(dependencies.zone ? { zone: dependencies.zone } : {})
   });
 }
 
@@ -973,7 +1034,8 @@ export async function runBoardValidate(options: Common, dependencies: BoardCliDe
       output(JSON.stringify(result, null, 2));
       return result.problems.length > 0 ? 1 : 0;
     }
-    const counts = `${result.cards} card${result.cards === 1 ? "" : "s"}, ${result.events} event${result.events === 1 ? "" : "s"}, ${result.cursors} cursor${result.cursors === 1 ? "" : "s"}`;
+    const schedules = result.schedules !== undefined ? `, ${result.schedules} schedule${result.schedules === 1 ? "" : "s"}` : "";
+    const counts = `${result.cards} card${result.cards === 1 ? "" : "s"}, ${result.events} event${result.events === 1 ? "" : "s"}, ${result.cursors} cursor${result.cursors === 1 ? "" : "s"}${schedules}`;
     // A note is no problem: a claim whose time passed, which the next take ends.
     const notes = (result.notes ?? []).map((note) => `  Note: ${note.file}: ${note.message}`);
     if (result.problems.length === 0) {
@@ -1053,6 +1115,243 @@ export async function runBoardTidy(options: BoardTidyOptions, dependencies: Boar
   });
 }
 
+// ---------------------------------------------------------------------------------------------
+// Schedules: the person's standing asks, each of which puts a card in Ready at its times (core/schedules.ts)
+
+/** When a schedule is due, from the options: one of --every (with --from), --daily or --weekly (each with --at); undefined when none is given. */
+function ruleOfOptions(options: BoardScheduleOptions, ctx: BoardContext): ScheduleRule | undefined {
+  const kinds = [options.every !== undefined ? "--every" : "", options.daily ? "--daily" : "", options.weekly !== undefined ? "--weekly" : ""].filter((kind) => kind !== "");
+  if (kinds.length > 1) throw new UsageError(`A schedule is due by one rule: give one of --every, --daily and --weekly, not ${kinds.join(" and ")}.`);
+  if (options.from !== undefined && options.every === undefined) throw new UsageError("--from is where an --every rule starts (--every 2h --from \"2026-11-23 09:00\"); --daily and --weekly take --at.");
+  if (options.at !== undefined && options.every !== undefined) throw new UsageError("--at is the time of day of a --daily or --weekly rule; an --every rule starts --from a local time.");
+  if (options.every !== undefined) {
+    const every = everyOf(options.every);
+    if (every === undefined) throw new UsageError(`"${options.every}" is not how often: give a number and minutes, hours or days, as 30m, 2h or 1d.`);
+    const zone = options.zone ?? ctx.zone ?? machineZone();
+    let from: string | undefined;
+    if (options.from !== undefined) {
+      from = localTimeOf(options.from);
+      if (from === undefined) throw new UsageError(`"${options.from}" is not a local time: give YYYY-MM-DD HH:MM, as "2026-11-23 09:00".`);
+    } else {
+      // From now: the next whole minute, so that the first card comes at once.
+      from = localTimeAt(Math.ceil(ctx.now().getTime() / 60_000) * 60_000, checkedZone(zone));
+    }
+    return { kind: "every", count: every.count, unit: every.unit, from };
+  }
+  if (options.daily || options.weekly !== undefined) {
+    const at = options.at === undefined ? undefined : clockOf(options.at);
+    if (at === undefined) throw new UsageError(options.at === undefined ? `${options.daily ? "--daily" : "--weekly"} needs --at <HH:MM>: the local time of day, as 09:00.` : `"${options.at}" is not a time of day: give HH:MM, as 09:00.`);
+    if (options.daily) return { kind: "daily", at };
+    const days = weekdaysOf(options.weekly!);
+    if (days === undefined) throw new UsageError(`"${options.weekly}" is not a list of days: give them as mon,thu (or monday thursday).`);
+    return { kind: "weekly", days, at };
+  }
+  if (options.at !== undefined) throw new UsageError("--at goes with --daily or --weekly mon,thu.");
+  return undefined;
+}
+
+/** The fields a schedule's card carries, from --field name=value (a JSON list or mapping read as one). */
+function scheduleFields(texts: string[] | undefined): Record<string, YamlValue> {
+  const fields: Record<string, YamlValue> = {};
+  for (const text of texts ?? []) {
+    const [name, value] = fieldOf(text);
+    fields[name] = value;
+  }
+  return fields;
+}
+
+/** A path as the person's terminal cites it. */
+function shown(ctx: BoardContext, dependencies: BoardCliDependencies, relative: string): string {
+  return path.relative(dependencies.cwd?.() ?? process.cwd(), path.join(ctx.dir, relative)) || relative;
+}
+
+/** A UTC time of a record as a person reads it: "2026-11-20 09:00 UTC". */
+function utcOf(at: string): string {
+  return utcWords(Date.parse(at));
+}
+
+/**
+ * `schedules`: every schedule of the board, with its rule in words, when it is due next (in its zone
+ * and in UTC), whether it is paused, and the last card it made. A board with none says so.
+ */
+export async function runBoardSchedules(options: Common, dependencies: BoardCliDependencies = {}): Promise<number> {
+  return run(options, dependencies, (ctx, output) => {
+    const listing = listSchedules(ctx);
+    if (options.json) {
+      output(JSON.stringify(listing, null, 2));
+      return 0;
+    }
+    const command = dependencies.command ?? "codelead board";
+    const lines: string[] = [];
+    if (listing.schedules.length === 0 && listing.unreadable.length === 0) {
+      lines.push(`This board has no schedules. \`${command} schedules add <name> --as <person> …\` makes one (\`${command} schedules add --help\` says how): at its times it puts a card in Ready.`);
+      if (listing.ready === undefined) lines.push(`The board has no Ready column either: \`${command} add-ready\` gives it one.`);
+      output(lines.join("\n"));
+      return 0;
+    }
+    const { config } = readBoardConfig(ctx.dir);
+    const count = listing.schedules.length;
+    lines.push(`${count} schedule${count === 1 ? "" : "s"}, each time in its zone and in UTC:`);
+    for (const schedule of listing.schedules) {
+      lines.push("", `${schedule.name}: ${schedule.words} (${schedule.zone}), made by ${schedule.made.by} on ${utcOf(schedule.made.at)}`);
+      if (schedule.paused) lines.push(`  paused by ${schedule.paused.by} on ${utcOf(schedule.paused.at)}: it makes no card until it is resumed`);
+      else if (schedule.next) lines.push(`  ${schedule.dueNow ? "due now, since" : "next:"} ${schedule.next.local} ${schedule.zone} (${schedule.next.utc})${schedule.dueNow ? ": the next run makes its card" : ""}`);
+      if (!schedule.maker.person) lines.push(`  it makes no card: ${schedule.maker.id} is no person of the board now`);
+      const last = schedule.lastCard;
+      if (last) {
+        const where = last.column !== undefined ? ` (${last.archived ? "archived" : `in ${columnName(config, last.column)}`})` : " (no longer on the board)";
+        lines.push(`  last card: #${String(last.id)}${last.title ? ` ${last.title}` : ""}${where}, due ${localWords(Date.parse(last.due), schedule.zone)}`);
+      } else lines.push("  last card: none yet");
+      if (schedule.last?.skipped) lines.push(`  last time due, ${localWords(Date.parse(schedule.last.due), schedule.zone)}: no card, as ${schedule.last.skipped}`);
+    }
+    for (const entry of listing.unreadable) lines.push("", `Not a schedule the board can read: ${entry.file} (${entry.problems.join("; ")})`);
+    if (listing.ready === undefined) lines.push("", `This board has no Ready column, so no schedule makes a card: \`${command} add-ready\` gives it one.`);
+    output(lines.join("\n"));
+    return 0;
+  });
+}
+
+/**
+ * `schedules add <name> --as <person>`: the person's standing ask (the core's `addSchedule`). When:
+ * --every (with --from), --daily or --weekly (with --at). The card: --type (task when not given),
+ * --title, --body or --body-file, --tag, --for, --field for the three things Ready asks; or
+ * --from-card <id>, which the other options change.
+ */
+export async function runBoardScheduleAdd(name: string, options: BoardScheduleOptions, dependencies: BoardCliDependencies = {}): Promise<number> {
+  return run(options, dependencies, (ctx, output) => {
+    const as = need(options.as, "schedules add needs --as <person>: a schedule is a person's standing ask.");
+    if (options.body !== undefined && options.bodyFile !== undefined) throw new UsageError("schedules add takes --body or --body-file, not both.");
+    const rule = ruleOfOptions(options, ctx);
+    if (rule === undefined) throw new UsageError('schedules add needs when it is due: --every 30m|2h|1d [--from "YYYY-MM-DD HH:MM"], --daily --at HH:MM, or --weekly mon,thu --at HH:MM.');
+    const base = options.fromCard !== undefined ? scheduleCardOf(ctx, cardIdOf(options.fromCard)) : undefined;
+    const title = options.title ?? base?.title;
+    const description = options.bodyFile !== undefined ? readText(options.bodyFile, dependencies) : (options.body ?? base?.description);
+    const card: ScheduleCardInput = {
+      type: options.type ?? base?.type ?? "task",
+      title: need(title, "schedules add needs --title <text> for its card (or --from-card <id>)."),
+      ...(description !== undefined ? { description } : {}),
+      tags: [...(base?.tags ?? []), ...(options.tag ?? []), ...(options.for !== undefined ? [`for:${options.for}`] : [])],
+      fields: { ...(base?.fields ?? {}), ...scheduleFields(options.field) }
+    };
+    const result = addSchedule(ctx, as, { name, rule, ...(options.zone !== undefined ? { zone: options.zone } : {}), card }, { ...(options.dryRun ? { dryRun: true } : {}) });
+    if (options.json) {
+      output(JSON.stringify({ ...(options.dryRun ? { dryRun: true } : {}), ...result }, null, 2));
+      return 0;
+    }
+    const { config } = readBoardConfig(ctx.dir);
+    const ready = columnName(config, "ready");
+    const schedule = result.schedule;
+    const said = `the schedule ${schedule.name}: ${ruleWords(schedule.rule)} (${schedule.zone})`;
+    const next = result.next ? `Its first card is due ${bothWords(Date.parse(result.next), schedule.zone)}, in ${ready}.` : "";
+    output((options.dryRun ? [`Would make ${said}; nothing was written.`, next] : [`Made ${said}.`, next, shown(ctx, dependencies, result.file)]).filter((line) => line !== "").join("\n"));
+    return 0;
+  });
+}
+
+/** `schedules change <name> --as <person>`: a new rule (its times then count from now), zone, or card (the core's `changeSchedule`). */
+export async function runBoardScheduleChange(name: string, options: BoardScheduleOptions, dependencies: BoardCliDependencies = {}): Promise<number> {
+  return run(options, dependencies, (ctx, output) => {
+    const as = need(options.as, "schedules change needs --as <person>: a schedule is a person's standing ask.");
+    if (options.body !== undefined && options.bodyFile !== undefined) throw new UsageError("schedules change takes --body or --body-file, not both.");
+    const rule = ruleOfOptions(options, ctx);
+    const description = options.bodyFile !== undefined ? readText(options.bodyFile, dependencies) : options.body;
+    const fields: Record<string, YamlValue | null> = scheduleFields(options.field);
+    for (const field of options.unsetField ?? []) {
+      if (Object.prototype.hasOwnProperty.call(fields, field)) throw new UsageError(`schedules change cannot both set and remove the field ${field}.`);
+      fields[field] = null;
+    }
+    const changes: ScheduleChanges = {
+      ...(rule !== undefined ? { rule } : {}),
+      ...(options.zone !== undefined ? { zone: options.zone } : {}),
+      ...(options.type !== undefined ? { type: options.type } : {}),
+      ...(options.title !== undefined ? { title: options.title } : {}),
+      ...(description !== undefined ? { description } : {}),
+      ...(options.tag || options.for !== undefined ? { addTags: [...(options.tag ?? []), ...(options.for !== undefined ? [`for:${options.for}`] : [])] } : {}),
+      ...(options.untag ? { removeTags: options.untag } : {}),
+      ...(Object.keys(fields).length > 0 ? { fields } : {})
+    };
+    if (Object.keys(changes).length === 0) {
+      throw new UsageError("schedules change needs something to change: --every, --daily or --weekly (with --from or --at), --zone, --type, --title, --body, --body-file, --tag, --untag, --for, --field or --unset-field.");
+    }
+    const result = changeSchedule(ctx, as, name, changes);
+    if (options.json) {
+      output(JSON.stringify(result, null, 2));
+      return 0;
+    }
+    const schedule = result.schedule;
+    if (result.events.length === 0) {
+      output(`Nothing to change on the schedule ${schedule.name}; nothing was written.`);
+      return 0;
+    }
+    const parts = (result.events[0]!.data?.changed as string[] | undefined) ?? [];
+    const lines = [`Changed the schedule ${schedule.name} (${parts.map((part) => (part === "card" ? "its card" : `its ${part}`)).join(", ")}): ${ruleWords(schedule.rule)} (${schedule.zone}).`];
+    if (parts.includes("rule") || parts.includes("zone")) lines.push("Its times count from now: a time the old rule had is not made up.");
+    if (result.next && !schedule.paused) lines.push(`Its next card is due ${bothWords(Date.parse(result.next), schedule.zone)}.`);
+    output(lines.join("\n"));
+    return 0;
+  });
+}
+
+/** `schedules pause|resume|remove <name> --as <person>` (the core's `pauseSchedule`, `resumeSchedule`, `removeSchedule`). */
+export async function runBoardScheduleState(verb: "pause" | "resume" | "remove", name: string, options: BoardScheduleNameOptions, dependencies: BoardCliDependencies = {}): Promise<number> {
+  return run(options, dependencies, (ctx, output) => {
+    const as = need(options.as, `schedules ${verb} needs --as <person>: a schedule is a person's standing ask.`);
+    if (verb === "remove") {
+      const result = removeSchedule(ctx, as, name);
+      output(options.json ? JSON.stringify(result, null, 2) : `Removed the schedule ${result.name} (${result.file}): it makes no more cards; the cards it made stay on the board.`);
+      return 0;
+    }
+    const result = verb === "pause" ? pauseSchedule(ctx, as, name) : resumeSchedule(ctx, as, name);
+    if (options.json) {
+      output(JSON.stringify(result, null, 2));
+      return 0;
+    }
+    const schedule = result.schedule;
+    const next = result.next ? `Its next card is due ${bothWords(Date.parse(result.next), schedule.zone)}.` : "";
+    if (verb === "pause") {
+      output(
+        result.events.length === 0
+          ? `The schedule ${schedule.name} is paused already (by ${schedule.paused!.by}, ${utcOf(schedule.paused!.at)}); nothing was written.`
+          : `Paused the schedule ${schedule.name}: it makes no card until it is resumed, and the times it misses meanwhile are not made up.`
+      );
+      return 0;
+    }
+    output(
+      result.events.length === 0
+        ? `The schedule ${schedule.name} is not paused; nothing was written.${next ? ` ${next}` : ""}`
+        : `Resumed the schedule ${schedule.name}: the times it missed while paused are not made up.${next ? ` ${next}` : ""}`
+    );
+    return 0;
+  });
+}
+
+/**
+ * `schedules run`: makes, once, the card of each schedule that is due now (the core's
+ * `runSchedules`), and says what it did; or that nothing is due, and when the next is. Anyone may run
+ * it (the cards are the schedules' persons'); the page's process runs it by itself while it runs, and
+ * the system's own scheduler can run it too. Exit 0 either way.
+ */
+export async function runBoardSchedulesRun(options: Common, dependencies: BoardCliDependencies = {}): Promise<number> {
+  return run(options, dependencies, (ctx, output) => {
+    const result = runSchedules(ctx);
+    if (options.json) {
+      output(JSON.stringify(result, null, 2));
+      return 0;
+    }
+    if (result.entries.length === 0) {
+      output(result.words);
+      return 0;
+    }
+    const lines: string[] = [];
+    for (const entry of result.entries) {
+      lines.push(entry.words);
+      if (entry.card) lines.push(shown(ctx, dependencies, entry.card.file));
+    }
+    output(lines.join("\n"));
+    return 0;
+  });
+}
+
 /** Opens an address with the system's opener; says the address when that cannot be done. */
 function openInBrowser(url: string, output: (line: string) => void): void {
   const [command, args]: [string, string[]] =
@@ -1103,6 +1402,9 @@ export async function runBoardServe(options: BoardServeOptions, dependencies: Bo
       home: ctx.home,
       now: ctx.now,
       ...(ctx.sanitizer ? { sanitizer: ctx.sanitizer } : {}),
+      ...(ctx.zone ? { zone: ctx.zone } : {}),
+      ...(dependencies.schedulesEveryMs !== undefined ? { schedulesEveryMs: dependencies.schedulesEveryMs } : {}),
+      ...(dependencies.timers ? { timers: dependencies.timers } : {}),
       pageDir,
       ...(dependencies.settleMs !== undefined ? { settleMs: dependencies.settleMs } : {}),
       // What the page says to run (`… add-ready` on a board without Ready), in the words this command tree is typed with.
@@ -1389,6 +1691,75 @@ export function createBoardCommand(host: BoardHost = {}): Command {
       .option("--dry-run", "print every change and write nothing")
       .action(async (options: BoardTidyOptions) => exit(await runBoardTidy(options, deps)))
   );
+  // Schedules: the person's standing asks, each of which puts a card in Ready at its times.
+  const when = (command: Command): Command =>
+    command
+      .option("--every <interval>", "every N minutes, hours or days: 30m, 2h, 1d (with --from)")
+      .option("--from <local time>", 'where an --every rule starts, in local time: "2026-11-23 09:00" (default: now)')
+      .option("--daily", "every day, at --at")
+      .option("--weekly <days>", "on these days of the week, at --at: mon,thu")
+      .option("--at <HH:MM>", "the local time of day of a --daily or --weekly rule: 09:00")
+      .option("--zone <zone>", "the time zone the rule is read in, as Europe/Berlin (default: this machine's, written down in the schedule)");
+  const template = (command: Command): Command =>
+    command
+      .option("--type <type>", "the card's type (default: task)")
+      .option("--title <text>", "the card's title")
+      .option("--body <markdown>", "the card's description")
+      .option("--body-file <path>", "the card's description, from a file")
+      .option("--tag <tag>", "a tag of the card (repeatable)", collect)
+      .option("--for <agent>", "the agent the card is for: the tag for:<agent> (default: any agent)")
+      .option(
+        "--field <name=value>",
+        "one of the fields Ready asks for: definitionOfDone, mayTouch (a JSON list for several), limitMinutes, limitMoney (repeatable)",
+        collect
+      );
+  // `schedules` alone is `schedules list`: the command of its own options (--board, --json), so that every command of it reads its own.
+  const schedules = new Command("schedules").description(
+    "The board's schedules, each a person's standing ask that puts a card in Ready at its times (made, changed, paused, resumed and removed by a person; `schedules run` makes what is due); alone, the list"
+  );
+  schedules.addCommand(
+    common(new Command("list"))
+      .description("The schedules: each one's rule, the next time it is due in its zone and in UTC, whether it is paused, and the last card it made")
+      .action(async (options: Common) => exit(await runBoardSchedules(options, deps))),
+    { isDefault: true }
+  );
+  schedules.addCommand(
+    template(when(common(new Command("add"))))
+      .description("Make a schedule (a person only): when it is due, and the card it puts in Ready then, which must say how to tell it is done, what it may touch and its limit")
+      .argument("<name>", "the schedule's name: a short word of lower-case letters, digits and -, as check-deps")
+      .option("--as <person>", "who makes it (a person)")
+      .option("--from-card <id>", "take the card from a card of the board: its type, title, description, tags (not by: ones) and Ready fields; the other options change them")
+      .option("--dry-run", "check everything and write nothing")
+      .action(async (name: string, options: BoardScheduleOptions) => exit(await runBoardScheduleAdd(name, options, deps)))
+  );
+  schedules.addCommand(
+    template(when(common(new Command("change"))))
+      .description("Change a schedule (a person only): a new rule or zone counts its times from now; a new card is checked as a new schedule's")
+      .argument("<name>", "the schedule's name")
+      .option("--as <person>", "who changes it (a person)")
+      .option("--untag <tag>", "remove a tag of the card (repeatable)", collect)
+      .option("--unset-field <name>", "remove a field of the card (repeatable)", collect)
+      .action(async (name: string, options: BoardScheduleOptions) => exit(await runBoardScheduleChange(name, options, deps)))
+  );
+  for (const [verb, words] of [
+    ["pause", "Pause a schedule (a person only): it makes no card until it is resumed, and the times it misses meanwhile are not made up"],
+    ["resume", "Resume a paused schedule (a person only): its times count from now"],
+    ["remove", "Remove a schedule (a person only): its file goes; the cards it made stay"]
+  ] as const) {
+    schedules.addCommand(
+      common(new Command(verb))
+        .description(words)
+        .argument("<name>", "the schedule's name")
+        .option("--as <person>", "who does it (a person)")
+        .action(async (name: string, options: BoardScheduleNameOptions) => exit(await runBoardScheduleState(verb, name, options, deps)))
+    );
+  }
+  schedules.addCommand(
+    common(new Command("run"))
+      .description("Make, once, the card of each schedule that is due now, and say what was done, or that nothing is due and when the next is (the page's process does it by itself while it runs)")
+      .action(async (options: Common) => exit(await runBoardSchedulesRun(options, deps)))
+  );
+  board.addCommand(schedules);
   board.addCommand(
     common(new Command("serve"))
       .description("Serve the board's page on this machine (127.0.0.1 only): the columns, the cards and their threads, the notifications, live as the files change")
@@ -1398,6 +1769,6 @@ export function createBoardCommand(host: BoardHost = {}): Command {
   );
   // The parser's own refusals (an unknown option or command, a missing argument or value) are the command line's: exit 2,
   // after the parser's words, as every refusal of a command that cannot run as written; help and --version stay 0.
-  for (const command of [board, ...board.commands]) command.exitOverride((error) => process.exit(error.exitCode === 0 ? 0 : 2));
+  for (const command of [board, ...board.commands, ...schedules.commands]) command.exitOverride((error) => process.exit(error.exitCode === 0 ? 0 : 2));
   return board;
 }

@@ -3,8 +3,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import {
   cardRanks,
+  digest,
   isBoardRefusal,
   LOCK_FILE,
+  readSchedules,
   readBoard,
   readEvents,
   readyWaits,
@@ -73,6 +75,8 @@ export class BoardStream {
   private unreadable = "";
   private config = "";
   private cursor = "";
+  /** The schedules' files as last announced: each one's name and digest. */
+  private schedules = "";
   private cardsChangedAt = 0;
   private synthesisOwed = false;
   private closed = false;
@@ -87,6 +91,7 @@ export class BoardStream {
     this.waits = new Map([...readyWaits(ctx)].map(([key, wait]) => [key, JSON.stringify(wait)]));
     this.unreadable = JSON.stringify(view.unreadable);
     this.config = this.configKey();
+    this.schedules = this.schedulesKey();
     this.cursor = this.cursorText(personOf(view.config).id);
   }
 
@@ -209,6 +214,12 @@ export class BoardStream {
         this.synthesisOwed = true;
       }
       this.announceConfig();
+      // A schedule's file changed (a command in a terminal, another page): the pages read the schedules again.
+      const schedules = this.schedulesKey();
+      if (schedules !== this.schedules) {
+        this.schedules = schedules;
+        this.broadcast("schedules", {});
+      }
       const cursor = this.cursorText(person.id);
       if (announcedEvents > 0 || cursor !== this.cursor) {
         this.cursor = cursor;
@@ -311,6 +322,10 @@ export class BoardStream {
     } catch {
       return "";
     }
+  }
+
+  private schedulesKey(): string {
+    return JSON.stringify(readSchedules(this.ctx.dir).map((entry) => [entry.name, digest(entry.raw)]));
   }
 
   private announceConfig(): void {

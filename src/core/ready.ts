@@ -138,14 +138,15 @@ export function readyDetails(id: CardId | undefined, gaps: ReadyGap[]): Record<s
  * Refuses a card that cannot go to Ready yet, naming each thing it does not say:
  * `Card #42 cannot go to Ready yet: it does not say how to tell it is done (definitionOfDone), and it
  * names no limit in minutes or money (limitMinutes, limitMoney). Nothing was written: set what is
- * missing, then move it again.` A card being created is "The new card".
+ * missing, then move it again.` A card being created is "The new card"; the card a schedule would
+ * put there (schedules.ts) is "The schedule's card", with the same words for what it does not say.
  */
-export function requireReady(card: Pick<CardData, "id" | "fields">, column: Pick<BoardColumn, "name">, options: { created?: boolean } = {}): void {
+export function requireReady(card: Pick<CardData, "id" | "fields">, column: Pick<BoardColumn, "name">, options: { created?: boolean; scheduled?: boolean } = {}): void {
   const gaps = readyGaps(card.fields);
   if (gaps.length === 0) return;
-  const subject = options.created ? "The new card" : `Card #${String(card.id)}`;
-  const then = options.created ? "then create it again" : "then move it again";
-  throw new BoardRefusal("ready", `${subject} cannot go to ${column.name} yet: ${joined(gaps.map((gap) => gap.words))}. Nothing was written: set what is missing, ${then}.`, readyDetails(card.id, gaps));
+  const subject = options.scheduled ? "The schedule's card" : options.created ? "The new card" : `Card #${String(card.id)}`;
+  const then = options.scheduled ? "then make the schedule again" : options.created ? "then create it again" : "then move it again";
+  throw new BoardRefusal("ready", `${subject} cannot go to ${column.name} yet: ${joined(gaps.map((gap) => gap.words))}. Nothing was written: set what is missing, ${then}.`, readyDetails(options.scheduled ? undefined : card.id, gaps));
 }
 
 /**

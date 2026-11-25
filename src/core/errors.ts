@@ -39,6 +39,8 @@ export const REFUSAL_CODES = [
   // A claim (dispatch.ts): a take by a person, a lease longer than the board allows, a renewal or a release by anyone but the
   // agent that holds the card, a move of a claimed card by another agent (or by its holder anywhere but For review).
   "claim",
+  // A schedule (schedules.ts): a name the board has a schedule of already, a name that is no schedule's word.
+  "schedule",
   "usage"
 ] as const;
 

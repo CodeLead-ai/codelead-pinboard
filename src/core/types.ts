@@ -120,6 +120,8 @@ export interface CardData {
   archived?: string;
   /** The agent the board gave the card to from Ready, and until when it holds it (a lease it renews while it works). */
   claim?: Claim;
+  /** The schedule that made the card, whose schedule it is, and the time it was due (written by the board alone). */
+  schedule?: ScheduledBy;
   /** Front-matter keys this core does not know, as read: kept in the file, never dropped. */
   extra: YamlMap;
   description: string;
@@ -145,6 +147,17 @@ export interface Claim {
   since: string;
   /** When the claim runs out unless it is renewed (UTC). */
   until: string;
+}
+
+/**
+ * A card a schedule made (schedules.ts): the schedule's name, the person whose schedule it is (the
+ * card's ask is theirs, and its author), and the time it was due (UTC). Front-matter key `schedule`,
+ * written by the board alone when the card is made.
+ */
+export interface ScheduledBy {
+  name: string;
+  by: string;
+  due: string;
 }
 
 /**
@@ -216,7 +229,16 @@ export const EVENT_KINDS = [
   "claim.renewed",
   "claim.released",
   "claim.expired",
-  "claim.ended"
+  "claim.ended",
+  // A schedule (schedules.ts): the person made, changed, paused, resumed or removed it; at its time it put its card in Ready
+  // (written just after the card's item.created); or it was due and made no card, and why (its last card still open).
+  "schedule.added",
+  "schedule.changed",
+  "schedule.paused",
+  "schedule.resumed",
+  "schedule.removed",
+  "schedule.ran",
+  "schedule.skipped"
 ] as const;
 
 export type EventKind = (typeof EVENT_KINDS)[number];

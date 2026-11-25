@@ -48,7 +48,7 @@ checks below, when CodeLead is installed (\`codelead board --help\`).
   line \`### <participant> · <UTC time>\` followed by its markdown.
 - \`events.jsonl\`: one JSON line per change, appended, never edited:
   \`{"at":"2026-10-03T00:52:10Z","by":"<you>","item":42,"kind":"comment.added","data":{"excerpt":"…"}}\`
-  Kinds: ${EVENT_KINDS.filter((kind) => ready !== undefined || !kind.startsWith("claim.")).join(", ")}.
+  Kinds: ${EVENT_KINDS.filter((kind) => ready !== undefined || (!kind.startsWith("claim.") && !kind.startsWith("schedule."))).join(", ")}.
 - \`cursors/<you>.json\`: what you have seen (not in git): \`seen\`, the time of your last \`--ack\`;
   \`lines\`, how many lines of events.jsonl you have read; \`opened\`, when you opened each card:
   \`{ "seen": "<time>", "lines": 17, "opened": { "42": "<time>" } }\`.
@@ -107,6 +107,7 @@ export function readySection(config: BoardConfig): string {
     : `Leave its cards where they are: the board has no column to take them into. Never move a card into ${ready.name}, or change those fields while it is there: the commands refuse it.`;
   return wrapLong(`## ${ready.name}
 ${ready.name} is the person's column of the cards an agent may pick up by itself: moving a card there is the person's ask for the work. A card there says how to tell it is done (\`fields.${DONE_WHEN_FIELD}\`), what it may touch (\`fields.${MAY_TOUCH_FIELD}\`) and its limit (\`fields.${LIMIT_MINUTES_FIELD}\`, \`fields.${LIMIT_MONEY_FIELD}\`): keep to them. ${take}
+A schedule of the person's puts a card in ${ready.name} at its times (tagged \`scheduled:<name>\`): take it like any other. Never make, change, pause or remove a schedule: the commands refuse it.
 `);
 }
 
