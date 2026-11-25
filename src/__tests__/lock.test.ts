@@ -63,7 +63,6 @@ function board(name: string): string {
 describe("the board's lock across processes", () => {
   it("lets one writer in at a time when a lock left by a writer that died is taken over, however many wait on it", async () => {
     const files = path.join(built.dist, "core", "files.js");
-    const said: string[] = [];
     for (let round = 0; round < 6; round += 1) {
       const dir = board(`stale-${round}`);
       const lock = path.join(dir, LOCK_FILE);
@@ -75,10 +74,10 @@ describe("the board's lock across processes", () => {
         fs.utimesSync(lock, old, old);
       } else fs.writeFileSync(lock, `${endedPid()}\n${os.hostname()}\nleft-by-a-writer-that-died\n`);
       const ran = await atOnce(path.join(dir, "gate"), files, Array.from({ length: 8 }, () => ({ args: [worker, files, dir] })));
-      said.push(...ran.map((entry) => entry.stdout));
+      // Each writer went in alone ("overlap": another was inside with it), none was refused, and the lock is gone.
+      expect(ran.map((entry) => entry.stdout), `round ${round}`).toEqual(Array.from({ length: 8 }, () => "ok"));
       expect(fs.existsSync(lock)).toBe(false);
     }
-    expect(said).toEqual(Array.from({ length: 48 }, () => "ok"));
   }, 120_000);
 
   it("never takes over the lock of a writer that still runs on this machine, however old the lock is", async () => {

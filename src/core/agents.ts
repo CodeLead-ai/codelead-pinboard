@@ -126,7 +126,7 @@ function codeleadSection(config: BoardConfig): string {
   const review = config.columns.find((column) => column.id === "for-review")?.name ?? "the review column";
   const personColumns = config.columns.filter((column) => column.owner === "person").map((column) => column.name);
   const never = personColumns.length === 0 ? "a person's column" : personColumns.length === 1 ? personColumns[0]! : `${personColumns.slice(0, -1).join(", ")} or ${personColumns[personColumns.length - 1]}`;
-  // A person's column the queue takes from (Pinned): a tagged card there is taken too. Not Ready: any agent takes a card out of it into In progress.
+  // A person's column the queue takes from (Pinned): a tagged card there is taken too. Not Ready: an agent gets a card from it only from the board (take).
   const takenFrom = config.columns.filter((column) => column.owner === "person" && !["in-progress", "for-review", "done", READY_COLUMN_ID].includes(column.id)).map((column) => column.name);
   const outOf = takenFrom.length === 0 ? "" : ` (out of ${listOf(takenFrom, "or")} too)`;
   return wrapLong(`

@@ -259,6 +259,23 @@ Refused: claude is an agent and does not move a card out of Ready (#3 into In pr
 With `--json`, the refusal of the check carries its parts: `"refused": "ready"`, the `card`, and
 `missing`, one entry per thing (`what`, `fields`, `words`).
 
+**A board made before Ready** works as before, without the column. One command gives it the
+column, and says what it did; it moves no card:
+
+```
+$ pinboard add-ready
+Added the column Ready to board.json, between Pinned and In progress. It is yours: put a card there that an agent may pick up by itself, once the card says how to tell it is done, what it may touch and its limit.
+AGENTS.md is written again, with the Ready rules.
+No card was moved.
+```
+
+When `AGENTS.md` was changed by hand, it is left as it is, and the command prints the lines to add.
+Until the column is there, the page's move menus say what to run. A board made earlier may also
+have the old column "Queued for CodeLead" (`queued`): it stays as it is, and **Send to CodeLead**
+(the tag `for:codelead`) still hands a card to CodeLead.
+
+On such a board, `take` answers that there is no Ready column, and how to add it.
+
 #### How an agent gets its card: take
 
 Agents do not race for a card and do not choose one. One place decides which agent gets which
@@ -349,21 +366,6 @@ step of the claim in plain words.
 ```
 
 `--lease <minutes>` on `take` or `renew` asks for another length, up to `maxLeaseMinutes`.
-
-**A board made before Ready** works as before, without the column. One command gives it the
-column, and says what it did; it moves no card:
-
-```
-$ pinboard add-ready
-Added the column Ready to board.json, between Pinned and In progress. It is yours: put a card there that an agent may pick up by itself, once the card says how to tell it is done, what it may touch and its limit.
-AGENTS.md is written again, with the Ready rules.
-No card was moved.
-```
-
-When `AGENTS.md` was changed by hand, it is left as it is, and the command prints the lines to add.
-Until the column is there, the page's move menus say what to run. A board made earlier may also
-have the old column "Queued for CodeLead" (`queued`): it stays as it is, and **Send to CodeLead**
-(the tag `for:codelead`) still hands a card to CodeLead.
 
 ### What happens behind the scenes
 
