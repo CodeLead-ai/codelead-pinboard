@@ -170,9 +170,10 @@ served to this machine only. Leave the terminal running; if it stops, run the co
 - **Read and answer:** open a card, read its thread, write a comment (seen rendered as you
   write, alone or side by side, like the description); type `@` to address someone
   (`@claude`): their next check lists that card first.
-- **Move cards** by dragging. **Pinned** and **Done** are yours alone: no agent moves a card
-  into them. An agent moves one out of them only when you asked for that card in its session
-  (to start the work, or to reopen it): a convention of `AGENTS.md`, since no command can tell.
+- **Move cards** by dragging. **Pinned**, **Ready** and **Done** are yours alone: no agent moves a
+  card into them. An agent moves one out of Pinned or Done only when you asked for that card in
+  its session (to start the work, or to reopen it): a convention of `AGENTS.md`, since no command
+  can tell. Out of Ready an agent takes a card into In progress, and nowhere else (below).
 - **Decide:** a decision card shows the ask on its face; your answer goes in its `decided`
   field, and the agent's next check lists it under "Decided".
 - **Tags, relations, attachments, a colour mark** (yours: no agent sets it) on each card;
@@ -182,12 +183,98 @@ served to this machine only. Leave the terminal running; if it stops, run the co
   noticed at the next check.
 
 **With the agent, as usual:** ask for the work in its session ("do card 1"); the card and its
-thread are its context. The board does not start work by itself and never calls a model.
+thread are its context. The board does not start work by itself and never calls a model. To let
+an agent pick a card up without you in the session, put the card in **Ready** (next section).
 
 ![A task card open on the page: description, the task's fields with what landed, related cards, and the thread with the agent's questions, the person's answers and the landing.](docs/screenshots/card.png)
 
 *A task after the work: the thread holds the agent's questions, the answers and what landed;
 "What landed" was filled by the landing comment.*
+
+### Handing a card to an agent: Ready
+
+There are two ways to give an agent a card:
+
+- **In the session:** "do card 3". The agent works while you are there.
+- **Ready:** drag the card to the **Ready** column. That is the ask: an agent may pick the card up
+  by itself, without you in the session, the next time it checks the board. The board itself
+  starts nothing.
+
+A card goes to Ready only when it can be worked alone. It must say three things, in its fields:
+
+| Field | What it says | Example |
+| --- | --- | --- |
+| `definitionOfDone` | How anyone can tell it is done: a sentence, a command, a test. | `npm test passes` |
+| `mayTouch` | What the work may touch: a repository, a folder, or files. At least one. | `src/auth/` |
+| `limitMinutes`, `limitMoney` | A limit in minutes, in money, or both. A number each. | `30` |
+
+To say which agent a Ready card is for, tag it `for:<agent>` (`for:codex`). A card with no such tag
+is for any agent.
+
+**On the page:** drag the card to Ready (or use the move menu, or the bar of picked cards). When
+something is missing, the card goes back, its panel opens beside the board, and the words say
+what is missing. The three things are there to fill in; **Save and move to Ready** saves them and
+moves the card. Once they are set, the card's panel shows them.
+
+**With the commands**, the same card, an agent's proposal from earlier:
+
+```
+$ pinboard move 3 --to ready --as robin
+Card #3 cannot go to Ready yet: it does not say how to tell it is done (definitionOfDone), it does not name the repository, folder or files it may touch (mayTouch), and it names no limit in minutes or money (limitMinutes, limitMoney). Nothing was written: set what is missing, then move it again.
+
+$ pinboard set 3 --as robin --field definitionOfDone="Five failed sign-ins in a minute lock the form for ten minutes; npm test passes." --field mayTouch='["src/auth/", "test/auth.test.ts"]' --field limitMinutes=30
+#3: changed its fields.
+
+$ pinboard move 3 --to ready --as robin
+Moved #3 from Backlog to Ready.
+```
+
+The card's file now says:
+
+```yaml
+fields:
+  definitionOfDone: "Five failed sign-ins in a minute lock the form for ten minutes; npm test passes."
+  mayTouch: [src/auth/, test/auth.test.ts]
+  limitMinutes: 30
+```
+
+The rules, which the commands enforce for every agent:
+
+- **Only you move a card into Ready.** An agent's move there is refused, as for Pinned and Done.
+- **An agent takes a card from Ready by moving it to In progress**, and moves it nowhere else. A
+  card tagged for another agent is not its to take.
+- **While a card is in Ready, its three things are your ask.** An agent may not change them, and
+  no change may take one away.
+- **You can move a card out of Ready** at any time, anywhere, with no check.
+
+```
+$ pinboard move 3 --to ready --as claude
+Refused: claude is an agent and may not move a card into Ready (a person's column); an agent may move a card into Inbox, Backlog, Ideas, In progress, For review. Nothing was written.
+
+$ pinboard move 3 --to backlog --as claude
+Refused: claude is an agent and may move a card out of Ready only into In progress, to take it; not into Backlog. Nothing was written.
+
+$ pinboard move 3 --to in-progress --as claude
+Moved #3 from Ready to In progress.
+```
+
+With `--json`, the refusal of the check carries its parts: `"refused": "ready"`, the `card`, and
+`missing`, one entry per thing (`what`, `fields`, `words`).
+
+**A board made before Ready** works as before, without the column. One command gives it the
+column, and says what it did; it moves no card:
+
+```
+$ pinboard add-ready
+Added the column Ready to board.json, between Pinned and In progress. It is yours: put a card there that an agent may pick up by itself, once the card says how to tell it is done, what it may touch and its limit.
+AGENTS.md is written again, with the Ready rules.
+No card was moved.
+```
+
+When `AGENTS.md` was changed by hand, it is left as it is, and the command prints the lines to add.
+Until the column is there, the page's move menus say what to run. A board made earlier may also
+have the old column "Queued for CodeLead" (`queued`): it stays as it is, and **Send to CodeLead**
+(the tag `for:codelead`) still hands a card to CodeLead.
 
 ### What happens behind the scenes
 
@@ -212,8 +299,9 @@ step 2 and `AGENTS.md` tell it to; you see the result on the page.
   `@robin` when it needs you.
 - **It proposes:** a finding, an idea, a question for you becomes a card in Inbox, tagged
   `by:claude`. A decision card carries its recommendation in its ask; only you set `decided`.
-- **It records its work:** when you ask for a card in the session, it moves the card to In
-  progress; when the work lands, it writes what landed and hands the card over in one step:
+- **It records its work:** when you ask for a card in the session, or when it takes a card from
+  Ready, it moves the card to In progress; when the work lands, it writes what landed and hands the
+  card over in one step:
 
   ```
   $ pinboard move 1 --to for-review --as claude --comment "Landed: 4f2a9c1 on main; src/pages/sign-in.ts, test/sign-in.test.ts (6 tests)."
@@ -315,7 +403,8 @@ picked background are in [`docs/screenshots/themes`](docs/screenshots/themes).*
 - **Open the page** (it is still running). The "@you" marks and "what changed since you last
   looked" show what needs you.
 - **Answer in the threads, drag to Done, decide** on the decision cards, pin what matters.
-- **Ask for work in the session** by card number; the agent reads the card and its thread.
+- **Ask for work in the session** by card number; the agent reads the card and its thread. Or
+  put a card that can be worked alone in **Ready**, for an agent to pick up.
 - **Commit the board** with the rest of your work, or let the agent do it with its landings.
 - **A new machine:** clone, `pinboard serve --open`. The cursors do not travel, so the agent's
   first check there starts from the beginning of the log; it looks from a day instead

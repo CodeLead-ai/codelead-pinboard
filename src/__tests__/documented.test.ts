@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createBoardCommand,
+  runBoardAddReady,
   runBoardArchive,
   runBoardCheck,
   runBoardInit,
@@ -493,5 +494,60 @@ describe("the README and the guide say what the code does", () => {
       { name: "api", open: 1 }
     ]);
     expect(README.replace(/\s+/g, " ")).toContain("how many of its cards are still open: not archived, and not in the board's last column (Done, on a board `init` made)");
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+
+describe("the README's section on Ready, run as written", () => {
+  /** The README's block of a command's output, from its `$ <command>` line to the next blank line. */
+  const printed = (command: string): string => {
+    const at = README.indexOf(`$ ${command}\n`);
+    expect(at, command).toBeGreaterThan(-1);
+    const start = at + command.length + 3;
+    return README.slice(start, README.indexOf("\n\n", start) === -1 ? undefined : README.indexOf("\n\n", start)).replace(/\n```$/, "");
+  };
+
+  it("is where a person looks for how to hand a card to an agent, with the three fields and one real card", async () => {
+    expect(README).toContain("### Handing a card to an agent: Ready");
+    expect(README.indexOf("### Handing a card to an agent: Ready")).toBeLessThan(README.indexOf("### What happens behind the scenes"));
+    for (const row of ["| `definitionOfDone` |", "| `mayTouch` |", "| `limitMinutes`, `limitMoney` |"]) expect(README).toContain(row);
+
+    const term = await terminal();
+    await runBoardNew({ as: "robin", type: "task", title: "Add a sign-in page" }, term.deps);
+    await runBoardNew({ as: "robin", type: "decision", title: "Pick the session store" }, term.deps);
+    await runBoardNew({ as: "claude", type: "task", title: "Rate-limit the sign-in form", column: "backlog", tag: ["area:auth"] }, term.deps);
+    term.said();
+    expect(await runBoardMove("3", { as: "robin", to: "ready" }, term.deps)).toBe(1);
+    expect(term.said()).toBe(printed("pinboard move 3 --to ready --as robin"));
+    const done = "Five failed sign-ins in a minute lock the form for ten minutes; npm test passes.";
+    expect(await runBoardSet("3", { as: "robin", field: [`definitionOfDone=${done}`, 'mayTouch=["src/auth/", "test/auth.test.ts"]', "limitMinutes=30"] }, term.deps)).toBe(0);
+    expect(term.said()).toBe(printed(`pinboard set 3 --as robin --field definitionOfDone="${done}" --field mayTouch='["src/auth/", "test/auth.test.ts"]' --field limitMinutes=30`));
+    expect(await runBoardMove("3", { as: "robin", to: "ready" }, term.deps)).toBe(0);
+    // The README shows the same command twice: the second time, the move.
+    const second = README.indexOf("$ pinboard move 3 --to ready --as robin\n", README.indexOf("$ pinboard move 3 --to ready --as robin\n") + 1);
+    expect(README.slice(second).split("\n")[1]).toBe(term.said());
+    const file = fs.readFileSync(path.join(term.dir, "items", term.files().find((name) => name.startsWith("0003-"))!), "utf8");
+    const fields = /\nfields:\n(?: {2}.*\n)+/.exec(file)![0].trimStart();
+    expect(README).toContain(`\`\`\`yaml\n${fields}\`\`\``);
+
+    expect(await runBoardMove("3", { as: "claude", to: "ready" }, term.deps)).toBe(1);
+    expect(term.said()).toBe(printed("pinboard move 3 --to ready --as claude"));
+    expect(await runBoardMove("3", { as: "claude", to: "backlog" }, term.deps)).toBe(1);
+    expect(term.said()).toBe(printed("pinboard move 3 --to backlog --as claude"));
+    expect(await runBoardMove("3", { as: "claude", to: "in-progress" }, term.deps)).toBe(0);
+    expect(term.said()).toBe(printed("pinboard move 3 --to in-progress --as claude").replace(/\n```[\s\S]*$/, ""));
+  });
+
+  it("gives the one command for a board made before Ready, with its words", async () => {
+    const term = await terminal();
+    // The board as it was made before Ready: board.json without the column, its guide as the package wrote it then.
+    const config = JSON.parse(fs.readFileSync(path.join(term.dir, "board.json"), "utf8")) as Parameters<typeof agentsGuide>[0];
+    const before = { ...config, columns: config.columns.filter((column) => column.id !== "ready") };
+    fs.writeFileSync(path.join(term.dir, "board.json"), `${JSON.stringify(before, null, 2)}\n`);
+    fs.writeFileSync(path.join(term.dir, "AGENTS.md"), agentsGuide(before));
+    expect(await runBoardAddReady({}, term.deps)).toBe(0);
+    expect(term.said()).toBe(printed("pinboard add-ready").replace(/\n```[\s\S]*$/, ""));
+    expect(README).toContain("| `add-ready` |");
   });
 });
